@@ -673,6 +673,63 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Lights Out ======================= */
+{
+  const { toggle, isSolved, scramble, solve, clicksForLevel, MAX_LEVEL, N, LightsOutGame } = await import('../js/games/LightsOutGame.js');
+  const apply = (grid, x) => x.reduce((g, v, i) => (v ? toggle(g, Math.floor(i / N), i % N) : g), grid);
+
+  test('lightsout: tıklama kendisini ve 4 komşusunu çevirir, iki kez tıklama geri alır', () => {
+    const g0 = new Array(25).fill(0);
+    const g1 = toggle(g0, 0, 0);
+    assert.equal(g1.reduce((a, b) => a + b, 0), 3); // köşe: kendisi + 2 komşu
+    const g2 = toggle(g0, 2, 2);
+    assert.deepEqual([7, 11, 12, 13, 17].map((i) => g2[i]), [1, 1, 1, 1, 1]);
+    assert.equal(g2.reduce((a, b) => a + b, 0), 5);
+    assert.deepEqual(toggle(g2, 2, 2), g0);
+  });
+
+  test('lightsout: üretilen tüm bulmacalar çözülebilir (Gauss/GF(2) çözücü ile)', () => {
+    const rng = seeded(13);
+    for (let level = 1; level <= MAX_LEVEL; level++) {
+      for (let k = 0; k < 40; k++) {
+        const { grid, clicks } = scramble(clicksForLevel(level), rng);
+        assert.equal(isSolved(grid), false);
+        assert.equal(new Set(clicks).size, clicks.length, 'tıklamalar farklı hücrelerde olmalı');
+        // Uygulanan tıklamaları tekrar uygulamak çözer
+        assert.ok(isSolved(clicks.reduce((g, i) => toggle(g, Math.floor(i / N), i % N), grid)));
+        const x = solve(grid);
+        assert.ok(x, 'çözücü çözüm bulamadı');
+        assert.ok(isSolved(apply(grid, x)));
+        assert.ok(x.reduce((a, b) => a + b, 0) <= clicks.length, 'en az tıklamalı çözüm daha uzun olamaz');
+      }
+    }
+  });
+
+  test('lightsout: çözümsüz bir durum tespit edilir; zorluk seviyeyle artar', () => {
+    const single = new Array(25).fill(0);
+    single[1] = 1; // 5×5'te tek ışık (0,1) çözümsüzdür (sessiz desene dik değil)
+    assert.equal(solve(single), null);
+    for (let l = 2; l <= MAX_LEVEL; l++) assert.ok(clicksForLevel(l) > clicksForLevel(l - 1));
+  });
+
+  test('lightsout: ipucu ile seviye çözülür ve sonraki seviyeye geçilir', () => {
+    const { game, input, step } = fakeEngine(LightsOutGame);
+    game.start();
+    for (let guard = 0; guard < 40 && game.level === 1; guard++) {
+      input.pressed.add('KeyH');
+      step();
+      if (game.hintCell >= 0) {
+        game.cursor = game.hintCell;
+        input.pressed.add('Enter');
+      }
+      step();
+      for (let t = 0; t < 70; t++) step(); // seviye geçiş beklemesi
+    }
+    assert.equal(game.level, 2);
+    assert.ok(game.score > 0);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {
