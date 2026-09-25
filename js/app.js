@@ -4,9 +4,11 @@
  */
 import { Engine } from './core/Engine.js';
 import { SnakeGame } from './games/SnakeGame.js';
+import { Game2048 } from './games/Game2048.js';
 
 const GAMES = [
   SnakeGame,
+  Game2048,
 ];
 
 const DEFAULT_ID = SnakeGame.meta.id;

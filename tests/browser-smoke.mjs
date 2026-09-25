@@ -116,6 +116,28 @@ async function shot(name) {
   writeFileSync(join(shotsDir, `${name}.png`), Buffer.from(r.data, 'base64'));
 }
 
+const G = 'window.arcadeHub.engine.game';
+const expect = (cond, msg) => {
+  if (!cond) problems.push(msg);
+};
+
+/** Oyuna özgü senaryolar: gerçek girdi olaylarıyla kritik akışları dener. */
+const SCENARIOS = {
+  async 2048() {
+    await evaluate(`${G}.restart(); ${G}.grid = [[1024,1024,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]`);
+    await key('ArrowLeft');
+    await sleep(500);
+    expect((await state()).state === 'won', '2048: 2048 karosunda "won" olmadı');
+    await key('Space');
+    const s = await evaluate(`({ st: ${G}.state, c: ${G}.continued })`);
+    expect(s.st === 'playing' && s.c, `2048: "devam et" çalışmadı ${JSON.stringify(s)}`);
+    await evaluate(`${G}.grid = [[2,4,2,4],[4,2,4,2],[2,4,2,4],[4,2,4,8]]; ${G}.grid[3][3] = 0`);
+    await key('ArrowRight');
+    await key('ArrowDown');
+    await sleep(300);
+  },
+};
+
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
   return { id: g.constructor.meta.id, state: g.state, score: g.score, paused: window.arcadeHub.engine.paused,
            w: window.arcadeHub.engine.width, h: window.arcadeHub.engine.height }; })()`);
@@ -198,6 +220,10 @@ try {
     }
     await sleep(400);
     await shot(`${id}-play`);
+    if (SCENARIOS[id]) {
+      await SCENARIOS[id]();
+      await shot(`${id}-scenario`);
+    }
     console.log(`  ${id.padEnd(12)} durum=${(await state()).state}`);
   }
 

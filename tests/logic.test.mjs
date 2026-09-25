@@ -65,6 +65,55 @@ export function seeded(seed = 1) {
   });
 }
 
+/* ======================= 2048 ======================= */
+{
+  const { slideLine, moveGrid, spawnTile, canMove, emptyGrid } = await import('../js/games/Game2048.js');
+  const vals = (line) => slideLine(line).values;
+
+  test('2048: bir karo bir hamlede yalnızca bir kez birleşir', () => {
+    assert.deepEqual(vals([2, 2, 2, 2]), [4, 4, 0, 0]);
+    assert.deepEqual(vals([2, 2, 4, 0]), [4, 4, 0, 0]); // yeni 4, eski 4 ile tekrar birleşmez
+    assert.deepEqual(vals([4, 4, 8, 0]), [8, 8, 0, 0]);
+    assert.deepEqual(vals([2, 0, 0, 2]), [4, 0, 0, 0]);
+    assert.deepEqual(vals([2, 2, 2, 0]), [4, 2, 0, 0]);
+    assert.deepEqual(vals([8, 4, 2, 2]), [8, 4, 4, 0]);
+    assert.equal(slideLine([2, 2, 4, 4]).gained, 12);
+  });
+
+  test('2048: yönler doğru ve hareketsiz kaydırma "moved=false"', () => {
+    const g = [[2, 0, 0, 2], [0, 0, 0, 0], [0, 4, 0, 0], [0, 4, 0, 0]];
+    assert.deepEqual(moveGrid(g, 'right').grid[0], [0, 0, 0, 4]);
+    assert.deepEqual(moveGrid(g, 'down').grid.map((r) => r[1]), [0, 0, 0, 8]);
+    assert.deepEqual(moveGrid(g, 'up').grid.map((r) => r[1]), [8, 0, 0, 0]);
+    const stuck = [[2, 4, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+    assert.equal(moveGrid(stuck, 'left').moved, false);
+    assert.equal(moveGrid(stuck, 'up').moved, false);
+    assert.equal(moveGrid(stuck, 'right').moved, true);
+    assert.deepEqual(g[0], [2, 0, 0, 2], 'girdi değişmemeli');
+  });
+
+  test('2048: yeni karolar ~%90 2, ~%10 4 ve yalnızca boş hücreye', () => {
+    const rng = seeded(3);
+    let fours = 0;
+    const N = 4000;
+    for (let i = 0; i < N; i++) {
+      const g = emptyGrid();
+      g[0][0] = 8;
+      const s = spawnTile(g, rng);
+      assert.ok(!(s.r === 0 && s.c === 0));
+      if (s.value === 4) fours++;
+    }
+    const ratio = fours / N;
+    assert.ok(ratio > 0.08 && ratio < 0.12, `4 oranı ${ratio}`);
+  });
+
+  test('2048: hamle kalmayınca canMove=false', () => {
+    assert.equal(canMove([[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 2]]), false);
+    assert.equal(canMove([[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 4]]), true);
+    assert.equal(canMove([[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 0, 4], [4, 2, 4, 2]]), true);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {
