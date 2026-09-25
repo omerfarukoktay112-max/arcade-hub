@@ -1,5 +1,7 @@
 # Arcade Hub
 
+**Canlı:** <https://omerfarukoktay112-max.github.io/arcade-hub/>
+
 Tarayıcıda çalışan, sunucusuz ve bağımlılıksız bir retro arcade oyun kütüphanesi. 12 klasik oyun; koyu, neon vurgulu arayüz. Tüm grafikler canvas ile koddan çizilir, sesler Web Audio ile üretilir. Build adımı, npm paketi, framework veya CDN yoktur: dosyaları olduğu gibi GitHub Pages'e koymanız yeterli.
 
 - Saf HTML + CSS + vanilla JavaScript (ES modules)
@@ -54,7 +56,7 @@ node tests/browser-smoke.mjs  # headless Chrome/Edge: 12 oyun hash + menü ile a
                               # olaylarıyla oynatılır, hızlı oyun geçişi, 375px mobil düzen; konsolda hata aranır
 ```
 
-Tarayıcı testi Chrome/Edge'i kendisi bulur (`CHROME_PATH` ile de verilebilir); tarayıcı yoksa atlanır. `--shots <klasör>` ile her oyunun ekran görüntüsünü kaydeder.
+Yayındaki siteyi test etmek için: `node tests/browser-smoke.mjs --url https://<kullanici>.github.io/arcade-hub/`. Tarayıcı testi Chrome/Edge'i kendisi bulur (`CHROME_PATH` ile de verilebilir); tarayıcı yoksa atlanır. `--shots <klasör>` ile her oyunun ekran görüntüsünü kaydeder.
 
 ## GitHub Pages'te yayınlama
 

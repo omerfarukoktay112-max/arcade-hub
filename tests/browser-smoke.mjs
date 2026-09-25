@@ -1,7 +1,7 @@
 // Headless Chrome/Edge duman testi — npm bağımlılığı yok.
 // Chrome DevTools Protocol'e Node'un yerleşik WebSocket'i ile bağlanır.
 //
-// Kullanım: node tests/browser-smoke.mjs [--shots <klasör>]
+// Kullanım: node tests/browser-smoke.mjs [--shots <klasör>] [--url <yayındaki adres>]
 // Tarayıcı yolu: CHROME_PATH ortam değişkeni ya da bilinen kurulum yolları.
 // Tarayıcı bulunamazsa test atlanır (çıkış kodu 0).
 import { spawn } from 'node:child_process';
@@ -12,6 +12,8 @@ import { startServer } from './serve.mjs';
 
 const args = process.argv.slice(2);
 const shotsDir = args.includes('--shots') ? args[args.indexOf('--shots') + 1] : null;
+// --url <adres>: yerel sunucu yerine yayındaki siteyi test eder (ör. GitHub Pages)
+const liveUrl = args.includes('--url') ? args[args.indexOf('--url') + 1] : null;
 
 const CANDIDATES = [
   process.env.CHROME_PATH,
@@ -339,7 +341,8 @@ try {
   await send('Page.enable');
 
   // Alt dizin yayınını taklit ederek aç (GitHub Pages: kullanici.github.io/arcade-hub/)
-  const BASE = `http://127.0.0.1:${HTTP_PORT}/arcade-hub/`;
+  const BASE = liveUrl || `http://127.0.0.1:${HTTP_PORT}/arcade-hub/`;
+  console.log(`Test adresi: ${BASE}`);
   await send('Page.navigate', { url: `${BASE}#olmayan-oyun` });
   await sleep(1200);
   const games = await evaluate(`window.arcadeHub.games.map(G => G.meta.id)`);
