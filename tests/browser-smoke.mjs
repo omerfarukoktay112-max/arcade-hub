@@ -217,6 +217,23 @@ const SCENARIOS = {
     expect(r !== 'X', 'tictactoe: zor AI kaybetti');
     await sleep(900);
   },
+
+  async connect4() {
+    await evaluate(`${G}.init()`);
+    await key('Digit1');
+    await key('Space');
+    await clickCanvas(42 + 3 * 88 + 44, 300);
+    await sleep(2000);
+    let n = await evaluate(`${G}.board.flat().filter(Boolean).length`);
+    expect(n === 2, `connect4: fare + AI hamlesi bekleniyordu, tahtada ${n} taş`);
+    await key('ArrowLeft');
+    expect(await evaluate(`${G}.selCol`) === 2, 'connect4: ← sütun seçimini değiştirmedi');
+    await key('Enter');
+    await sleep(2000);
+    n = await evaluate(`${G}.board.flat().filter(Boolean).length`);
+    expect(n === 4, `connect4: klavye + AI hamlesi bekleniyordu, tahtada ${n} taş`);
+    expect(await evaluate(`${G}.board.some(r => r[2] === 1)`), 'connect4: klavye ile seçilen sütuna düşmedi');
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;

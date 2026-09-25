@@ -597,6 +597,82 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Connect Four ======================= */
+{
+  const C4 = await import('../js/games/ConnectFourGame.js');
+  const { createBoard, dropRow, findWin, isFull, bestMove, scoreWindow, validCols, ROWS, COLS } = C4;
+  /** Satırlar üstten alta; '.' boş, '1'/'2' taşlar */
+  const fromRows = (rows) => rows.map((r) => [...r].map((ch) => (ch === '.' ? 0 : Number(ch))));
+  const play = (board, col, p) => {
+    board[dropRow(board, col)][col] = p;
+  };
+
+  test('connect4: düşme satırı ve dolu sütun', () => {
+    const b = createBoard();
+    assert.equal(dropRow(b, 0), ROWS - 1);
+    for (let i = 0; i < ROWS; i++) play(b, 0, 1 + (i % 2));
+    assert.equal(dropRow(b, 0), -1);
+    assert.ok(!validCols(b).includes(0));
+  });
+
+  test('connect4: yatay, dikey ve iki çapraz kazanç tespiti', () => {
+    assert.equal(findWin(fromRows(['.......', '.......', '.......', '.......', '.......', '.1111..'])).player, 1);
+    assert.equal(findWin(fromRows(['.......', '.......', '...2...', '...2...', '...2...', '...2...'])).player, 2);
+    const diag = findWin(fromRows(['.......', '.......', '...1...', '..12...', '.122...', '1222...']));
+    assert.equal(diag.player, 1);
+    assert.deepEqual(diag.cells.map(([r, c]) => `${r}${c}`).sort(), ['23', '32', '41', '50']);
+    assert.equal(findWin(fromRows(['.......', '.......', '2......', '12.....', '112....', '1112...'])).player, 2);
+    assert.equal(findWin(fromRows(['.......', '.......', '.......', '.......', '.......', '.111.1.'])), null);
+  });
+
+  test('connect4: beraberlik (dolu tahta, kazanan yok)', () => {
+    const full = fromRows(['1122112', '2211221', '1122112', '2211221', '1122112', '2211221']);
+    assert.equal(findWin(full), null);
+    assert.equal(isFull(full), true);
+  });
+
+  test('connect4: pencere heuristiği', () => {
+    assert.equal(scoreWindow([2, 2, 2, 0], 2), 5);
+    assert.equal(scoreWindow([2, 2, 0, 0], 2), 2);
+    assert.equal(scoreWindow([1, 1, 1, 0], 2), -4);
+    assert.equal(scoreWindow([1, 2, 0, 0], 2), 0);
+  });
+
+  test('connect4: AI kazanan hamleyi yapar, rakibin kazancını bloklar', () => {
+    // AI (2) tek hamlede kazanabilir: sütun 1 ya da 5
+    const win = fromRows(['.......', '.......', '.......', '.......', '1......', '1.222.1']);
+    assert.ok([1, 5].includes(bestMove(win, 2)));
+    // İnsan (1) dikeyde 3 taş: AI sütun 0'ı bloklamalı
+    const block = fromRows(['.......', '.......', '.......', '1......', '1......', '1.22...']);
+    assert.equal(bestMove(block, 2), 0);
+    // Açık ikili: AI, iki ucu açık bir üçlüye (kaçınılmaz kayıp) izin vermemek için bitişik oynamalı
+    const open = fromRows(['.......', '.......', '.......', '.......', '.......', '..11...']);
+    assert.ok([1, 4].includes(bestMove(open, 2)), `seçilen: ${bestMove(open, 2)}`);
+  });
+
+  test('connect4: derinlik 5 hızlı ve rastgele oyuncuyu yener', () => {
+    const t0 = performance.now();
+    bestMove(createBoard(), 2);
+    const ms = performance.now() - t0;
+    assert.ok(ms < 1500, `boş tahtada ${ms.toFixed(0)} ms`);
+    const rng = seeded(21);
+    let aiWins = 0;
+    for (let g = 0; g < 6; g++) {
+      const b = createBoard();
+      let turn = 1;
+      while (!findWin(b) && !isFull(b)) {
+        const cols = validCols(b);
+        const col = turn === 1 ? cols[Math.floor(rng() * cols.length)] : bestMove(b, 2);
+        play(b, col, turn);
+        turn = turn === 1 ? 2 : 1;
+      }
+      if (findWin(b)?.player === 2) aiWins++;
+    }
+    assert.equal(aiWins, 6);
+    assert.equal(COLS, 7);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {
