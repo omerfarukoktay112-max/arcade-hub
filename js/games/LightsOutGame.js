@@ -1,14 +1,19 @@
-import { BaseGame, NEON, HUD_HEIGHT, roundRect } from '../core/BaseGame.js';
+import { BaseGame, NEON, HUD_HEIGHT, roundRect, pointInRect } from '../core/BaseGame.js';
 
 export const N = 5;
 const W = 500;
 const H = 550;
-const CELL = 84;
+const CELL = 82;
 const GAP = 8;
 const GX = (W - (CELL * N + GAP * (N - 1))) / 2;
-const GY = HUD_HEIGHT + 20;
+const GY = HUD_HEIGHT + 14;
 export const MAX_LEVEL = 10;
 const LEVEL_PAUSE = 0.9;
+// Dokunmatik cihazlar için R / H kısayollarının düğme karşılıkları
+const TOOLS = [
+  { id: 'reset', label: '↺ SIFIRLA', rect: { x: 24, y: H - 36, w: 150, h: 30 } },
+  { id: 'hint', label: '? İPUCU', rect: { x: 184, y: H - 36, w: 130, h: 30 } },
+];
 
 /* ---------------- Saf mantık ---------------- */
 
@@ -153,20 +158,15 @@ export class LightsOutGame extends BaseGame {
     }
 
     const input = this.input;
-    if (input.wasPressed('KeyR')) {
-      this.grid = this.initial.slice();
-      this.moves = 0;
-      this.hintCell = -1;
-      this.sound.beep(260, 0.08, { type: 'triangle' });
+    const p = input.pointer;
+    const tool = p.clicked && p.button === 0 ? TOOLS.find((t) => pointInRect(p, t.rect)) : null;
+    if (input.wasPressed('KeyR') || tool?.id === 'reset') {
+      this.resetLevel();
       return;
     }
-    if (input.wasPressed('KeyH')) {
-      const sol = solve(this.grid);
-      const idx = sol ? sol.indexOf(1) : -1;
-      if (idx >= 0) {
-        this.hintCell = idx;
-        this.hints++;
-      }
+    if (input.wasPressed('KeyH') || tool?.id === 'hint') {
+      this.showHint();
+      if (tool) return;
     }
     const moves = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] };
     for (const [code, [dr, dc]] of Object.entries(moves)) {
@@ -182,7 +182,6 @@ export class LightsOutGame extends BaseGame {
       this.press(this.cursor);
       return;
     }
-    const p = input.pointer;
     if (p.clicked && p.button === 0) {
       const c = Math.floor((p.x - GX) / (CELL + GAP));
       const r = Math.floor((p.y - GY) / (CELL + GAP));
@@ -191,6 +190,23 @@ export class LightsOutGame extends BaseGame {
         this.showCursor = false;
         this.press(r * N + c);
       }
+    }
+  }
+
+  resetLevel() {
+    this.grid = this.initial.slice();
+    this.moves = 0;
+    this.hintCell = -1;
+    this.sound.beep(260, 0.08, { type: 'triangle' });
+  }
+
+  /** Çözücünün en kısa çözümündeki bir hücreyi vurgular (her ipucu seviye puanından düşer). */
+  showHint() {
+    const sol = solve(this.grid);
+    const idx = sol ? sol.indexOf(1) : -1;
+    if (idx >= 0 && idx !== this.hintCell) {
+      this.hintCell = idx;
+      this.hints++;
     }
   }
 
@@ -264,7 +280,8 @@ export class LightsOutGame extends BaseGame {
         size: 34, color: NEON.green, glow: 18,
       });
     }
-    this.text(`Hedef: ${this.par} hamle · R: sıfırla · H: ipucu`, W / 2, H - 20, { size: 13, color: NEON.dim });
+    for (const t of TOOLS) this.drawButton(t.rect, t.label, { size: 13, color: t.id === 'hint' ? NEON.green : NEON.cyan });
+    this.text(`HEDEF ${this.par} HAMLE`, W - 24, H - 20, { size: 14, align: 'right', color: NEON.dim });
     this.drawHUD(`SEVİYE ${this.level}/${MAX_LEVEL} · HAMLE ${this.moves}`);
   }
 }

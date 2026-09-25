@@ -286,7 +286,7 @@ export class TetrisGame extends BaseGame {
     if (input.wasPressed('ArrowUp', 'KeyX', 'KeyW')) this.rotate(1);
     if (input.wasPressed('KeyZ')) this.rotate(-1);
     if (p.pressed) {
-      this.dragAnchor = p.x;
+      this.dragAnchor = p.startX; // basış noktası (kare işlenene kadar parmak ilerlemiş olabilir)
       this.dragMoved = false;
     }
     if (p.clicked && p.button === 0 && !this.dragMoved) this.rotate(1);
