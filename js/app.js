@@ -8,6 +8,7 @@ import { Game2048 } from './games/Game2048.js';
 import { MinesweeperGame } from './games/MinesweeperGame.js';
 import { TetrisGame } from './games/TetrisGame.js';
 import { PongGame } from './games/PongGame.js';
+import { BreakoutGame } from './games/BreakoutGame.js';
 
 const GAMES = [
   SnakeGame,
@@ -15,6 +16,7 @@ const GAMES = [
   MinesweeperGame,
   TetrisGame,
   PongGame,
+  BreakoutGame,
 ];
 
 const DEFAULT_ID = SnakeGame.meta.id;

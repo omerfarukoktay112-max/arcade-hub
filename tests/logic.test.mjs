@@ -404,6 +404,71 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Breakout ======================= */
+{
+  const { BreakoutGame, layoutForLevel, circleRect, paddleBounce, BRICK_COLS } = await import('../js/games/BreakoutGame.js');
+
+  test('breakout: seviye dizilimleri boş değil, simetrik ve farklı', () => {
+    const seen = new Set();
+    for (let lv = 1; lv <= 20; lv++) {
+      const g = layoutForLevel(lv);
+      assert.ok(g.flat().some(Boolean), `seviye ${lv} boş`);
+      for (const row of g) for (let c = 0; c < BRICK_COLS; c++) assert.equal(row[c], row[BRICK_COLS - 1 - c]);
+      seen.add(JSON.stringify(g));
+    }
+    assert.ok(seen.size >= 4);
+  });
+
+  test('breakout: daire-dikdörtgen çarpışma ekseni', () => {
+    const rect = { x: 100, y: 100, w: 50, h: 20 };
+    assert.equal(circleRect(0, 0, 7, rect), null);
+    assert.equal(circleRect(125, 95, 7, rect).axis, 'y'); // üstten
+    assert.equal(circleRect(125, 95, 7, rect).sign, -1);
+    assert.equal(circleRect(95, 110, 7, rect).axis, 'x'); // soldan
+    assert.equal(circleRect(155, 110, 7, rect).sign, 1); // sağdan
+  });
+
+  test('breakout: raket açısı çarpma noktasına göre', () => {
+    const mid = paddleBounce(150, 100, 100, 400);
+    assert.ok(Math.abs(mid.vx) < 1e-9 && mid.vy < 0);
+    assert.ok(paddleBounce(105, 100, 100, 400).vx < 0);
+    assert.ok(paddleBounce(195, 100, 100, 400).vx > 0);
+  });
+
+  test('breakout: büyük dt ve çok hızlı topta bile tuğlanın içinden geçmez', () => {
+    const { game } = fakeEngine(BreakoutGame);
+    game.start();
+    const target = game.bricks.find((b) => b.row === 5 && b.x > 250);
+    const other = game.bricks.filter((b) => b !== target);
+    game.bricks = [target, ...other.slice(0, 1)];
+    other[0].x = 0; other[0].y = 45; // uzakta, sol üstte
+    game.alive = 2;
+    game.ball = { x: target.x + target.w / 2, y: target.y + 300, vx: 0, vy: -3000, stuck: false };
+    game.stepBall(0.1); // tek karede 300 px
+    assert.equal(target.hp, 0, 'tuğla vurulmadı (tünelleme)');
+    assert.ok(game.ball.vy > 0, 'top geri dönmedi');
+    assert.ok(game.ball.y > target.y + target.h, 'top tuğlanın içinde/üstünde kaldı');
+  });
+
+  test('breakout: can kaybı ve tüm tuğlalar bitince seviye atlama', () => {
+    const { game } = fakeEngine(BreakoutGame);
+    game.start();
+    game.ball = { x: 300, y: 690, vx: 0, vy: 400, stuck: false };
+    game.stepBall(0.1);
+    assert.equal(game.lives, 2);
+    assert.equal(game.ball.stuck, true);
+    game.bricks.forEach((b) => (b.hp = 0));
+    game.bricks[0].hp = 1;
+    game.alive = 1;
+    const b0 = game.bricks[0];
+    game.ball = { x: b0.x + b0.w / 2, y: b0.y + b0.h + 20, vx: 0, vy: -500, stuck: false };
+    game.stepBall(0.1);
+    assert.equal(game.level, 2);
+    assert.equal(game.ball.stuck, true);
+    assert.ok(game.alive > 0);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {
