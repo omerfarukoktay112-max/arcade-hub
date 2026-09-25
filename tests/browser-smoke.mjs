@@ -166,6 +166,24 @@ const SCENARIOS = {
     await key('Enter');
     expect((await state()).state === 'ready', 'minesweeper: Enter ile yeniden başlamadı');
   },
+
+  async tetris() {
+    await evaluate(`${G}.restart()`);
+    await key('ArrowLeft', 500); // DAS/ARR: basılı tutunca duvara kadar gitmeli
+    const minX = await evaluate(`(() => { const p = ${G}.current; let m = 99;
+      p.matrix.forEach(row => row.forEach((v, c) => { if (v) m = Math.min(m, p.x + c); })); return m; })()`);
+    expect(minX === 0, `tetris: DAS ile sola dayanmadı (x=${minX})`);
+    await key('KeyC');
+    expect(await evaluate(`${G}.hold !== null`), 'tetris: C ile tutma çalışmadı');
+    await evaluate(`(() => { const g = ${G};
+      for (let r = 16; r < 20; r++) for (let c = 1; c < 10; c++) g.board[r][c] = 'O';
+      g.current = { type: 'I', rot: 1, x: -2, y: 0, matrix: [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]] }; })()`);
+    const before = await evaluate(`${G}.score`);
+    await key('Space');
+    await sleep(400);
+    const after = await evaluate(`({ lines: ${G}.lines, score: ${G}.score, rest: ${G}.board.flat().filter(Boolean).length })`);
+    expect(after.lines === 4 && after.score - before >= 800 && after.rest === 0, `tetris: 4 satır silinmedi ${JSON.stringify(after)}`);
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;

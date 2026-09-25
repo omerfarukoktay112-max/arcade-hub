@@ -212,6 +212,115 @@ export function seeded(seed = 1) {
   });
 }
 
+/* ======================= Tetris ======================= */
+{
+  const T = await import('../js/games/TetrisGame.js');
+  const { SHAPES, TYPES, rotateMatrix, createPiece, tryRotate, collides, clearLines, fullRows, mergePiece,
+    scoreForLines, levelForLines, createBag, emptyBoard, dropDistance, COLS, ROWS } = T;
+
+  test('tetris: 4 kez döndürme başlangıca döner, CW ve CCW birbirinin tersi', () => {
+    for (const t of TYPES) {
+      let m = SHAPES[t];
+      for (let i = 0; i < 4; i++) m = rotateMatrix(m, 1);
+      assert.deepEqual(m, SHAPES[t]);
+      assert.deepEqual(rotateMatrix(rotateMatrix(SHAPES[t], 1), -1), SHAPES[t]);
+    }
+  });
+
+  test('tetris: SRS durumları (T ve I) doğru', () => {
+    const b = emptyBoard();
+    const t = tryRotate(b, { ...createPiece('T'), y: 5 }, 1);
+    assert.deepEqual(t.matrix, [[0, 1, 0], [0, 1, 1], [0, 1, 0]]);
+    assert.equal(t.rot, 1);
+    const i = tryRotate(b, { ...createPiece('I'), y: 5 }, 1);
+    assert.deepEqual(i.matrix.map((r) => r.join('')), ['0010', '0010', '0010', '0010']);
+    const o = createPiece('O');
+    const o2 = tryRotate(b, o, 1);
+    assert.equal(o2.x, o.x);
+    assert.equal(o2.y, o.y);
+  });
+
+  test('tetris: SRS wall kick — duvara yaslı T ve I', () => {
+    const b = emptyBoard();
+    // T, R durumunda sol duvara yaslı (x=-1 → dolu sütunlar 0 ve 1). R→2 döndürme: test 2 (+1, 0)
+    let tR = tryRotate(b, { ...createPiece('T'), y: 10 }, 1);
+    tR = { ...tR, x: -1 };
+    assert.equal(collides(b, tR), false);
+    const t2 = tryRotate(b, tR, 1);
+    assert.equal(t2.rot, 2);
+    assert.equal(t2.x, 0);
+    assert.equal(t2.y, 10);
+    // I, R durumunda sol duvarda (x=-2 → sütun 0). R→2: test1 (-1,0) çarpar, test2 (+2,0) → x=0
+    let iR = tryRotate(b, { ...createPiece('I'), y: 10 }, 1);
+    iR = { ...iR, x: -2 };
+    assert.equal(collides(b, iR), false);
+    const i2 = tryRotate(b, iR, 1);
+    assert.equal(i2.x, 0);
+    assert.equal(i2.y, 10);
+    // I, 0 durumunda sağ duvarda; 0→R: test1 (0,0) → x=6 sütun 8 (serbest)
+    const i0 = { ...createPiece('I'), x: 6, y: 10 };
+    assert.equal(tryRotate(b, i0, 1).x, 6);
+  });
+
+  test('tetris: kick ile zemin altından yukarı kaçış ve tamamen kilitli döndürme', () => {
+    // T yere oturmuş (0 durumu, en alt satırda). 0→R: test1 çarpmaz → yerinde döner
+    const b = emptyBoard();
+    const t = { ...createPiece('T'), y: ROWS - 2 };
+    assert.equal(dropDistance(b, t), 0);
+    const r = tryRotate(b, t, 1);
+    assert.ok(r, 'döndürülebilmeli');
+    assert.equal(collides(b, r), false);
+    // Her yanı dolu bir kuyu: döndürme mümkün değil → null
+    const full = emptyBoard().map((row) => row.map(() => 'Z'));
+    for (let x = 0; x < 3; x++) full[5][3 + x] = null;
+    full[4][4] = null;
+    const stuck = { ...createPiece('T'), x: 3, y: 4 };
+    assert.equal(collides(full, stuck), false);
+    assert.equal(tryRotate(full, stuck, 1), null);
+  });
+
+  test('tetris: satır silme, üst satırlar aşağı kayar', () => {
+    const b = emptyBoard();
+    b[ROWS - 1] = new Array(COLS).fill('I');
+    b[ROWS - 2] = new Array(COLS).fill('J');
+    b[ROWS - 2][4] = null;
+    b[ROWS - 3][0] = 'T';
+    b[ROWS - 4] = new Array(COLS).fill('L');
+    assert.deepEqual(fullRows(b), [ROWS - 4, ROWS - 1]);
+    const { board, cleared } = clearLines(b);
+    assert.equal(cleared, 2);
+    assert.equal(board.length, ROWS);
+    assert.equal(board[ROWS - 1][4], null);
+    assert.equal(board[ROWS - 1][0], 'J');
+    assert.equal(board[ROWS - 2][0], 'T');
+    assert.ok(board[0].every((c) => c === null) && board[1].every((c) => c === null));
+  });
+
+  test('tetris: I parçası ile tetris (4 satır) ve puanlama', () => {
+    let b = emptyBoard();
+    for (let r = ROWS - 4; r < ROWS; r++) for (let c = 1; c < COLS; c++) b[r][c] = 'O';
+    let i = tryRotate(b, { ...createPiece('I'), y: 0 }, 1); // dikey, sütun x+2
+    i = { ...i, x: -2 };
+    i = { ...i, y: i.y + dropDistance(b, i) };
+    b = mergePiece(b, i).board;
+    assert.equal(clearLines(b).cleared, 4);
+    assert.equal(scoreForLines(1, 1), 100);
+    assert.equal(scoreForLines(2, 1), 300);
+    assert.equal(scoreForLines(3, 2), 1000);
+    assert.equal(scoreForLines(4, 3), 2400);
+    assert.equal(levelForLines(9), 1);
+    assert.equal(levelForLines(10), 2);
+  });
+
+  test('tetris: 7-bag her 7 parçada tüm tipleri bir kez verir', () => {
+    const next = createBag(seeded(5));
+    for (let k = 0; k < 50; k++) {
+      const bag = Array.from({ length: 7 }, next).sort();
+      assert.deepEqual(bag, TYPES.slice().sort());
+    }
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {
