@@ -525,6 +525,78 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Tic-Tac-Toe ======================= */
+{
+  const { winnerOf, bestMove, aiMove, emptyCells } = await import('../js/games/TicTacToeGame.js');
+  const B = (s) => [...s].map((ch) => (ch === '.' ? null : ch));
+
+  test('tictactoe: kazanan ve beraberlik tespiti', () => {
+    assert.deepEqual(winnerOf(B('XXX......')).line, [0, 1, 2]);
+    assert.equal(winnerOf(B('O...O...O')).player, 'O');
+    assert.equal(winnerOf(B('XOXXOOOXX')).draw, true);
+    assert.equal(winnerOf(B('XO.......')), null);
+  });
+
+  test('tictactoe: minimax kazanca gider ve rakibi bloklar', () => {
+    assert.equal(bestMove(B('OO.XX....'), 'O'), 2); // kendi kazancı bloklamaktan önce
+    assert.equal(bestMove(B('XX.O.....'), 'O'), 2); // blok
+    assert.equal(bestMove(B('X...O...X'), 'O') % 2, 1); // çatal tuzağına düşmez: kenar oynar
+  });
+
+  test('tictactoe: zor AI (O) tüm olası oyunlarda asla kaybetmez', () => {
+    let games = 0;
+    const rngs = [null, seeded(1), seeded(2)];
+    for (const rng of rngs) {
+      const walk = (board) => {
+        const res = winnerOf(board);
+        if (res) {
+          games++;
+          assert.notEqual(res.player, 'X', `AI kaybetti: ${board.map((v) => v || '.').join('')}`);
+          return;
+        }
+        for (const i of emptyCells(board)) {
+          const b = board.slice();
+          b[i] = 'X';
+          const r2 = winnerOf(b);
+          if (r2) {
+            games++;
+            assert.notEqual(r2.player, 'X', `AI kaybetti: ${b.map((v) => v || '.').join('')}`);
+            continue;
+          }
+          b[bestMove(b, 'O', rng)] = 'O';
+          walk(b);
+        }
+      };
+      walk(new Array(9).fill(null));
+    }
+    assert.ok(games > 100);
+  });
+
+  test('tictactoe: AI X olarak başlasa da kaybetmez; kolay mod bazen rastgele oynar', () => {
+    const walk = (board, turn) => {
+      const res = winnerOf(board);
+      if (res) return assert.notEqual(res.player, 'O');
+      if (turn === 'X') {
+        const b = board.slice();
+        b[bestMove(b, 'X')] = 'X';
+        return walk(b, 'O');
+      }
+      for (const i of emptyCells(board)) {
+        const b = board.slice();
+        b[i] = 'O';
+        walk(b, 'X');
+      }
+    };
+    walk(new Array(9).fill(null), 'X');
+    // Kolay: rng < 0.5 → rastgele boş hücre (bloklaması gereken yere oynamayabilir)
+    let nonOptimal = 0;
+    const rng = seeded(4);
+    for (let i = 0; i < 200; i++) if (aiMove(B('XX.O.....'), 'O', 'easy', rng) !== 2) nonOptimal++;
+    assert.ok(nonOptimal > 40 && nonOptimal < 140, `kolay mod ${nonOptimal}/200 kez blok yapmadı`);
+    for (let i = 0; i < 50; i++) assert.equal(aiMove(B('XX.O.....'), 'O', 'hard', rng), 2);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {

@@ -197,6 +197,26 @@ const SCENARIOS = {
     expect(y1.b < y0.b && y1.a > y0.a, `pong: raketler tuşlarla hareket etmedi ${JSON.stringify([y0, y1])}`);
     await evaluate(`${G}.setMode(1)`);
   },
+
+  async tictactoe() {
+    await evaluate(`${G}.init()`);
+    await key('Digit1');
+    await key('Space');
+    const cell = (i) => [30 + (i % 3) * 130 + 65, 52 + Math.floor(i / 3) * 130 + 65];
+    await clickCanvas(...cell(4));
+    await sleep(700);
+    const n = await evaluate(`${G}.board.filter(Boolean).length`);
+    expect(n === 2, `tictactoe: oyuncu + AI hamlesi bekleniyordu, tahtada ${n} işaret`);
+    // Kalan hamleleri klavye imleciyle oyna; zor AI'ye karşı sonuç kayıp olamaz
+    for (let k = 0; k < 12 && (await state()).state === 'playing'; k++) {
+      const free = await evaluate(`${G}.board.findIndex(v => !v)`);
+      await clickCanvas(...cell(free));
+      await sleep(650);
+    }
+    const r = await evaluate(`${G}.result && ${G}.result.player`);
+    expect(r !== 'X', 'tictactoe: zor AI kaybetti');
+    await sleep(900);
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
