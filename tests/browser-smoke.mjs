@@ -1,0 +1,255 @@
+// Headless Chrome/Edge duman testi — npm bağımlılığı yok.
+// Chrome DevTools Protocol'e Node'un yerleşik WebSocket'i ile bağlanır.
+//
+// Kullanım: node tests/browser-smoke.mjs [--shots <klasör>]
+// Tarayıcı yolu: CHROME_PATH ortam değişkeni ya da bilinen kurulum yolları.
+// Tarayıcı bulunamazsa test atlanır (çıkış kodu 0).
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startServer } from './serve.mjs';
+
+const args = process.argv.slice(2);
+const shotsDir = args.includes('--shots') ? args[args.indexOf('--shots') + 1] : null;
+
+const CANDIDATES = [
+  process.env.CHROME_PATH,
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+].filter(Boolean);
+const browserPath = CANDIDATES.find((p) => existsSync(p));
+if (!browserPath) {
+  console.log('Tarayıcı bulunamadı; tarayıcı duman testi atlandı.');
+  process.exit(0);
+}
+if (typeof WebSocket === 'undefined') {
+  console.log('Bu Node sürümünde yerleşik WebSocket yok (Node 22+ gerekli); test atlandı.');
+  process.exit(0);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HTTP_PORT = 8765;
+const DEBUG_PORT = 9333;
+
+const server = await startServer(HTTP_PORT);
+const profile = mkdtempSync(join(tmpdir(), 'arcade-hub-'));
+const browser = spawn(browserPath, [
+  '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`,
+  '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--mute-audio',
+  '--window-size=1280,900', 'about:blank',
+], { stdio: 'ignore' });
+
+let ws;
+let nextId = 1;
+const pending = new Map();
+const problems = [];
+
+async function cleanup(code) {
+  try {
+    ws?.close();
+  } catch {}
+  browser.kill();
+  server.close();
+  await sleep(300);
+  try {
+    rmSync(profile, { recursive: true, force: true });
+  } catch {}
+  process.exit(code);
+}
+
+function send(method, params = {}) {
+  const id = nextId++;
+  ws.send(JSON.stringify({ id, method, params }));
+  return new Promise((ok, bad) => pending.set(id, { ok, bad, method }));
+}
+
+async function evaluate(expression) {
+  const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+  if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
+  return r.result.value;
+}
+
+const KEYS = {
+  Space: { key: ' ', keyCode: 32 }, Enter: { key: 'Enter', keyCode: 13 }, Escape: { key: 'Escape', keyCode: 27 },
+  ArrowUp: { key: 'ArrowUp', keyCode: 38 }, ArrowDown: { key: 'ArrowDown', keyCode: 40 },
+  ArrowLeft: { key: 'ArrowLeft', keyCode: 37 }, ArrowRight: { key: 'ArrowRight', keyCode: 39 },
+  KeyP: { key: 'p', keyCode: 80 }, KeyC: { key: 'c', keyCode: 67 }, KeyN: { key: 'n', keyCode: 78 },
+  KeyR: { key: 'r', keyCode: 82 }, KeyW: { key: 'w', keyCode: 87 }, KeyS: { key: 's', keyCode: 83 },
+  KeyH: { key: 'h', keyCode: 72 },
+  Digit1: { key: '1', keyCode: 49 }, Digit2: { key: '2', keyCode: 50 }, Digit3: { key: '3', keyCode: 51 },
+};
+async function key(code, holdMs = 30) {
+  const k = KEYS[code];
+  const base = { code, key: k.key, windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode };
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text: k.key.length === 1 ? k.key : undefined });
+  await sleep(holdMs);
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+  await sleep(40);
+}
+
+/** Canvas üzerinde mantıksal koordinata (lx, ly) tıklar. */
+async function clickCanvas(lx, ly, button = 'left') {
+  const pt = await evaluate(`(() => {
+    const c = document.getElementById('game-canvas'); const r = c.getBoundingClientRect();
+    const e = window.arcadeHub.engine;
+    return { x: r.left + ${lx} * r.width / e.width, y: r.top + ${ly} * r.height / e.height };
+  })()`);
+  const common = { x: pt.x, y: pt.y, button, clickCount: 1 };
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...common, buttons: button === 'right' ? 2 : 1 });
+  await sleep(40);
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...common, buttons: 0 });
+  await sleep(60);
+}
+
+async function shot(name) {
+  if (!shotsDir) return;
+  mkdirSync(shotsDir, { recursive: true });
+  const r = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(join(shotsDir, `${name}.png`), Buffer.from(r.data, 'base64'));
+}
+
+const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
+  return { id: g.constructor.meta.id, state: g.state, score: g.score, paused: window.arcadeHub.engine.paused,
+           w: window.arcadeHub.engine.width, h: window.arcadeHub.engine.height }; })()`);
+
+try {
+  // DevTools uç noktası hazır olana kadar bekle
+  let targets;
+  for (let i = 0; i < 60; i++) {
+    try {
+      targets = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`)).json();
+      if (targets.some((t) => t.type === 'page')) break;
+    } catch {}
+    await sleep(200);
+  }
+  const page = targets?.find((t) => t.type === 'page');
+  if (!page) throw new Error('DevTools sayfa hedefi bulunamadı');
+
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((ok, bad) => {
+    ws.onopen = ok;
+    ws.onerror = bad;
+  });
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.id && pending.has(msg.id)) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.bad(new Error(`${p.method}: ${msg.error.message}`));
+      else p.ok(msg.result);
+      return;
+    }
+    if (msg.method === 'Runtime.exceptionThrown') {
+      problems.push(`istisna: ${msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text}`);
+    } else if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning', 'assert'].includes(msg.params.type)) {
+      problems.push(`console.${msg.params.type}: ${msg.params.args.map((a) => a.value ?? a.description).join(' ')}`);
+    } else if (msg.method === 'Log.entryAdded' && ['error', 'warning'].includes(msg.params.entry.level)) {
+      problems.push(`log.${msg.params.entry.level}: ${msg.params.entry.text} ${msg.params.entry.url || ''}`);
+    }
+  };
+  await send('Runtime.enable');
+  await send('Log.enable');
+  await send('Page.enable');
+
+  // Alt dizin yayınını taklit ederek aç (GitHub Pages: kullanici.github.io/arcade-hub/)
+  const BASE = `http://127.0.0.1:${HTTP_PORT}/arcade-hub/`;
+  await send('Page.navigate', { url: `${BASE}#olmayan-oyun` });
+  await sleep(1200);
+  const games = await evaluate(`window.arcadeHub.games.map(G => G.meta.id)`);
+  const first = await state();
+  const hashNow = await evaluate('location.hash');
+  console.log(`Geçersiz hash → ${first.id} (${hashNow})`);
+  if (hashNow !== '#snake') problems.push(`geçersiz hash #snake'e düzeltilmedi: ${hashNow}`);
+  if (first.id !== 'snake') problems.push(`geçersiz hash Snake açmadı: ${first.id}`);
+  const menuCount = await evaluate(`document.querySelectorAll('#game-menu .menu-btn').length`);
+  if (menuCount !== games.length) problems.push(`menü buton sayısı ${menuCount} ≠ ${games.length}`);
+
+  // 1) Her oyunu hash ile aç, temel girdilerle oynat
+  for (const id of games) {
+    await evaluate(`location.hash = ${JSON.stringify(id)}`);
+    await sleep(350);
+    let s = await state();
+    if (s.id !== id) problems.push(`#${id} hash'i ${s.id} oyununu açtı`);
+    const active = await evaluate(`document.querySelector('.menu-btn.active')?.dataset.id`);
+    if (active !== id) problems.push(`#${id}: aktif menü butonu ${active}`);
+    await shot(`${id}-ready`);
+
+    await key('Space');
+    await clickCanvas(s.w / 2, s.h / 2);
+    for (const k of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Space', 'Enter']) await key(k);
+    await clickCanvas(s.w * 0.3, s.h * 0.6);
+    await clickCanvas(s.w * 0.7, s.h * 0.4, 'right');
+    await sleep(700);
+    s = await state();
+    if (s.state === 'playing') {
+      await key('KeyP');
+      if (!(await state()).paused) problems.push(`${id}: P ile duraklamadı`);
+      await shot(`${id}-paused`);
+      await key('Escape');
+      if ((await state()).paused) problems.push(`${id}: Esc ile devam etmedi`);
+    }
+    await sleep(400);
+    await shot(`${id}-play`);
+    console.log(`  ${id.padEnd(12)} durum=${(await state()).state}`);
+  }
+
+  // 2) Menü tıklamasıyla açılış (hashchange akışı)
+  for (const id of games) {
+    await evaluate(`document.querySelector('.menu-btn[data-id="${id}"]').click()`);
+    await sleep(60);
+    const s = await state();
+    if (s.id !== id) problems.push(`menü tıklaması ${id} yerine ${s.id} açtı`);
+    if (await evaluate(`document.activeElement?.classList.contains('menu-btn')`)) problems.push(`${id}: buton blur edilmedi`);
+  }
+
+  // 3) Hızlı geçiş: 12 oyun × 8 tur, her karede
+  for (let round = 0; round < 8; round++) {
+    for (const id of games) {
+      await evaluate(`location.hash = ${JSON.stringify(id)}`);
+      await sleep(16);
+    }
+  }
+  await sleep(500);
+  const leakCheck = await evaluate(`(() => { const e = window.arcadeHub.engine; return { keys: e.input.keysDown.size, gesture: !!e.input._gesture }; })()`);
+  if (leakCheck.keys || leakCheck.gesture) problems.push(`hızlı geçiş sonrası artık girdi durumu: ${JSON.stringify(leakCheck)}`);
+
+  // 4) Mobil genişlik (375px)
+  await send('Emulation.setDeviceMetricsOverride', { width: 375, height: 740, deviceScaleFactor: 2, mobile: true });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  for (const id of games) {
+    await evaluate(`location.hash = ${JSON.stringify(id)}`);
+    await sleep(250);
+    const m = await evaluate(`(() => {
+      const c = document.getElementById('game-canvas').getBoundingClientRect();
+      const e = window.arcadeHub.engine;
+      return { scrollW: document.documentElement.scrollWidth, cw: c.width, ch: c.height, left: c.left, right: c.right,
+               ratio: (c.width / c.height) / (e.width / e.height), dpr: e.canvas.width / e.width };
+    })()`);
+    if (m.scrollW > 375) problems.push(`mobil ${id}: yatay taşma (scrollWidth ${m.scrollW})`);
+    if (m.left < 0 || m.right > 375) problems.push(`mobil ${id}: canvas ekrandan taşıyor (${m.left}–${m.right})`);
+    if (Math.abs(m.ratio - 1) > 0.02) problems.push(`mobil ${id}: en-boy oranı bozuk (${m.ratio.toFixed(3)})`);
+    if (Math.abs(m.dpr - 2) > 0.01) problems.push(`mobil ${id}: HiDPI ölçeği ${m.dpr}`);
+    await shot(`mobile-${id}`);
+  }
+  await sleep(300);
+  console.log(`\n${games.length} oyun hash/menü/hızlı geçiş/mobil kontrolünden geçirildi.`);
+} catch (err) {
+  problems.push(`test hatası: ${err.stack || err.message}`);
+}
+
+if (problems.length) {
+  console.error(`\n${problems.length} sorun:`);
+  for (const p of problems) console.error(`  ✗ ${p}`);
+  await cleanup(1);
+} else {
+  console.log('Konsolda hata/uyarı yok ✓');
+  await cleanup(0);
+}

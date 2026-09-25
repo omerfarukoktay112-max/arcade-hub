@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Arcade Hub</title>
+  <meta name="description" content="Sunucusuz, bağımlılıksız HTML5 retro arcade oyun kütüphanesi.">
+  <meta name="theme-color" content="#07070d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2307070d'/%3E%3Cpath d='M3 11h10M5 5h2v2H5zM9 5h2v2H9z' stroke='%2322e4ff' stroke-width='1.5' fill='%23ff2e88'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./css/style.css">
+  <script type="module" src="./js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="#" aria-label="Arcade Hub ana oyun">ARCADE<span>HUB</span></a>
+    <div class="toolbar">
+      <button id="pause-btn" class="tool-btn" type="button">⏸ Duraklat</button>
+      <button id="mute-btn" class="tool-btn" type="button" aria-pressed="false">🔊 Ses açık</button>
+    </div>
+  </header>
+
+  <nav id="game-menu" class="menu" aria-label="Oyunlar"></nav>
+
+  <main class="stage">
+    <h1 id="game-title" class="game-title">Arcade Hub</h1>
+    <div class="canvas-wrap">
+      <canvas id="game-canvas" width="600" height="600" aria-label="Oyun alanı"></canvas>
+    </div>
+    <p id="game-description" class="game-description"></p>
+    <p class="game-controls"><span class="kbd-label">Kontroller</span> <span id="game-controls"></span></p>
+    <noscript><p class="notice">Arcade Hub çalışmak için JavaScript gerektirir.</p></noscript>
+  </main>
+
+  <footer class="footer">P / Esc: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar bu tarayıcıda saklanır</footer>
+</body>
+</html>
