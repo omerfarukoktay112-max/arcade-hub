@@ -7,12 +7,14 @@ import { SnakeGame } from './games/SnakeGame.js';
 import { Game2048 } from './games/Game2048.js';
 import { MinesweeperGame } from './games/MinesweeperGame.js';
 import { TetrisGame } from './games/TetrisGame.js';
+import { PongGame } from './games/PongGame.js';
 
 const GAMES = [
   SnakeGame,
   Game2048,
   MinesweeperGame,
   TetrisGame,
+  PongGame,
 ];
 
 const DEFAULT_ID = SnakeGame.meta.id;

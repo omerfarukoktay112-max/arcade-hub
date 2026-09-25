@@ -321,6 +321,89 @@ export function seeded(seed = 1) {
   });
 }
 
+/**
+ * DOM'suz sahte engine: oyun sınıflarının update() mantığını Node'da sürmek için.
+ * Çizim yapılmaz; girdi elle ayarlanır.
+ */
+export function fakeEngine(Game) {
+  const store = new Map();
+  const input = {
+    down: new Set(), pressed: new Set(), swipe: null,
+    pointer: { x: 0, y: 0, isDown: false, pressed: false, released: false, clicked: false, button: 0, type: 'mouse', hover: false },
+    isDown(...c) { return c.some((k) => this.down.has(k)); },
+    wasPressed(...c) { return c.some((k) => this.pressed.has(k)); },
+    consume() {},
+    endFrame() { this.pressed.clear(); this.swipe = null; Object.assign(this.pointer, { pressed: false, released: false, clicked: false }); },
+  };
+  const engine = {
+    width: Game.meta.width, height: Game.meta.height, ctx: null, input,
+    storage: {
+      get: (k, f = null) => (store.has(k) ? store.get(k) : f),
+      set: (k, v) => store.set(k, v),
+      getBest: (k) => store.get(`best:${k}`) ?? null,
+      submitScore: (k, v, lower) => {
+        const b = store.get(`best:${k}`);
+        const better = b === undefined || (lower ? v < b : v > b);
+        if (better && (lower || v > 0)) store.set(`best:${k}`, v);
+        return better;
+      },
+    },
+    sound: { beep() {}, seq() {}, win() {}, lose() {} },
+    resizeCanvas(w, h) { this.width = w; this.height = h; },
+  };
+  const game = new Game(engine);
+  game.init();
+  return { game, input, engine, step(dt = 1 / 60) { game.update(dt); input.endFrame(); } };
+}
+
+/* ======================= Pong ======================= */
+{
+  const { PongGame, bounceVelocity, predictY } = await import('../js/games/PongGame.js');
+
+  test('pong: açı rakete çarpma noktasına göre, hız korunur', () => {
+    const mid = bounceVelocity(145, 100, 90, 400, 1);
+    assert.ok(Math.abs(mid.vy) < 1e-9 && mid.vx > 0);
+    const top = bounceVelocity(100, 100, 90, 400, -1);
+    assert.ok(top.vy < 0 && top.vx < 0);
+    const bottom = bounceVelocity(190, 100, 90, 400, 1);
+    assert.ok(bottom.vy > 0);
+    assert.ok(Math.abs(Math.hypot(top.vx, top.vy) - 400) < 1e-6);
+  });
+
+  test('pong: duvar yansımalı y tahmini', () => {
+    assert.equal(predictY(0, 100, 100, 0, 300), 100);
+    // 500 yükseklik, top 12: yansıma sınırı 488. Yukarı giden top duvardan döner.
+    assert.equal(Math.round(predictY(0, 50, 100, -100, 100)), 50);
+    assert.equal(Math.round(predictY(0, 50, 100, -100, 200)), 150); // 50 − 200 = −150 → yansıma: 150
+    assert.equal(Math.round(predictY(0, 400, 100, 100, 200)), 976 - 600); // 600 > 488 → 376
+  });
+
+  test('pong: yapay zekâ hareketsiz oyuncuyu yener ama yenilmez değildir', () => {
+    // 1) Hareketsiz oyuncu → AI kazanır
+    const a = fakeEngine(PongGame);
+    a.game.setMode(1);
+    a.game.start();
+    for (let i = 0; i < 60 * 300 && a.game.state === 'playing'; i++) a.step();
+    assert.equal(a.game.state, 'over');
+    assert.equal(a.game.winner, 2);
+
+    // 2) Kusursuz oyuncu (raket topu birebir takip eder) → AI er geç sayı kaçırır
+    let aiConceded = 0;
+    for (let round = 0; round < 3; round++) {
+      const b = fakeEngine(PongGame);
+      b.game.setMode(1);
+      b.game.start();
+      for (let i = 0; i < 60 * 400 && b.game.state === 'playing'; i++) {
+        const g = b.game;
+        g.p1.y = Math.max(0, Math.min(500 - 90, g.ball.y + 6 - 45));
+        b.step();
+      }
+      aiConceded += b.game.s1;
+    }
+    assert.ok(aiConceded > 0, 'AI hiç sayı kaçırmadı (yenilmez)');
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {

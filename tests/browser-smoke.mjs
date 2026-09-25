@@ -184,6 +184,19 @@ const SCENARIOS = {
     const after = await evaluate(`({ lines: ${G}.lines, score: ${G}.score, rest: ${G}.board.flat().filter(Boolean).length })`);
     expect(after.lines === 4 && after.score - before >= 800 && after.rest === 0, `tetris: 4 satır silinmedi ${JSON.stringify(after)}`);
   },
+
+  async pong() {
+    await evaluate(`${G}.init()`);
+    await key('Digit2');
+    expect(await evaluate(`${G}.mode === 2`), 'pong: 2 tuşu 2 oyuncu modunu seçmedi');
+    await key('Space');
+    const y0 = await evaluate(`({ a: ${G}.p1.y, b: ${G}.p2.y })`);
+    await key('ArrowUp', 250);
+    await key('KeyS', 250);
+    const y1 = await evaluate(`({ a: ${G}.p1.y, b: ${G}.p2.y })`);
+    expect(y1.b < y0.b && y1.a > y0.a, `pong: raketler tuşlarla hareket etmedi ${JSON.stringify([y0, y1])}`);
+    await evaluate(`${G}.setMode(1)`);
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
