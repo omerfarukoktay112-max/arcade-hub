@@ -22,6 +22,7 @@ export class Input {
 
     this.keysDown = new Set();
     this.keysPressed = new Set();
+    this.keysTyped = new Set(); // bu karede basılan e.key değerleri (+, - gibi semboller için)
 
     /**
      * x, y      : mantıksal canvas koordinatı
@@ -79,6 +80,15 @@ export class Input {
     return codes.some((c) => this.keysPressed.has(c));
   }
 
+  /**
+   * Sembol tuşları için (ör. '+', '-'): e.code fiziksel konumdur ve klavye düzenine göre
+   * farklı sembollere denk gelir (Türkçe Q'da '-' tuşunun kodu 'Equal'). Bu yüzden
+   * yalnızca sembollerde e.key tabanlı kontrol kullanılır.
+   */
+  wasTyped(...keys) {
+    return keys.some((k) => this.keysTyped.has(k));
+  }
+
   /** Engine'in, bir basışı oyuna ulaşmadan tüketmesi için. */
   consume(...codes) {
     for (const c of codes) this.keysPressed.delete(c);
@@ -92,6 +102,7 @@ export class Input {
   /** Tek karelik tüm girdileri sıfırlar. Her karenin sonunda çağrılır. */
   endFrame() {
     this.keysPressed.clear();
+    this.keysTyped.clear();
     this.pointer.pressed = false;
     this.pointer.released = false;
     this.pointer.clicked = false;
@@ -128,6 +139,7 @@ export class Input {
     if (isEditable(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (PREVENT_KEYS.has(e.code)) e.preventDefault();
     if (!e.repeat && !this.keysDown.has(e.code)) this.keysPressed.add(e.code);
+    if (!e.repeat) this.keysTyped.add(e.key);
     this.keysDown.add(e.code);
   }
 

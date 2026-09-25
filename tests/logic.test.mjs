@@ -328,12 +328,13 @@ export function seeded(seed = 1) {
 export function fakeEngine(Game) {
   const store = new Map();
   const input = {
-    down: new Set(), pressed: new Set(), swipe: null,
+    down: new Set(), pressed: new Set(), typed: new Set(), swipe: null,
     pointer: { x: 0, y: 0, isDown: false, pressed: false, released: false, clicked: false, button: 0, type: 'mouse', hover: false },
     isDown(...c) { return c.some((k) => this.down.has(k)); },
     wasPressed(...c) { return c.some((k) => this.pressed.has(k)); },
+    wasTyped(...c) { return c.some((k) => this.typed.has(k)); },
     consume() {},
-    endFrame() { this.pressed.clear(); this.swipe = null; Object.assign(this.pointer, { pressed: false, released: false, clicked: false }); },
+    endFrame() { this.pressed.clear(); this.typed.clear(); this.swipe = null; Object.assign(this.pointer, { pressed: false, released: false, clicked: false }); },
   };
   const engine = {
     width: Game.meta.width, height: Game.meta.height, ctx: null, input,
@@ -778,6 +779,96 @@ export function fakeEngine(Game) {
     assert.equal(g2.state, 'won');
     assert.equal(g2.moves, 8);
     assert.equal(g2.score, 1000);
+  });
+}
+
+/* ======================= Game of Life ======================= */
+{
+  const { step, parseRLE, placePattern, PATTERNS, LifeGame, COLS, ROWS } = await import('../js/games/LifeGame.js');
+  const grid = (cols, rows, pts, x0 = 0, y0 = 0) => placePattern(new Uint8Array(cols * rows), cols, rows, pts, x0, y0);
+  const alive = (cells, cols) => [...cells].flatMap((v, i) => (v ? [`${i % cols},${Math.floor(i / cols)}`] : [])).sort();
+  const run = (cells, cols, rows, n) => {
+    for (let k = 0; k < n; k++) cells = step(cells, cols, rows);
+    return cells;
+  };
+
+  test('life: blinker salınır, blok sabit kalır', () => {
+    const blinker = grid(5, 5, [[1, 2], [2, 2], [3, 2]]);
+    const b1 = step(blinker, 5, 5);
+    assert.deepEqual(alive(b1, 5), ['2,1', '2,2', '2,3']);
+    assert.deepEqual(alive(step(b1, 5, 5), 5), alive(blinker, 5));
+    const block = grid(6, 6, [[2, 2], [3, 2], [2, 3], [3, 3]]);
+    assert.deepEqual(alive(step(block, 6, 6), 6), alive(block, 6));
+  });
+
+  test('life: glider 4 nesilde (1,1) kayar ve toroidal kenardan geri gelir', () => {
+    const g = grid(20, 20, PATTERNS.glider.cells, 5, 5);
+    const moved = alive(run(g, 20, 20, 4), 20);
+    assert.deepEqual(moved, alive(grid(20, 20, PATTERNS.glider.cells, 6, 6), 20));
+    // 20×20 torusta 80 nesil sonra glider tam tur atıp aynı yere döner
+    assert.deepEqual(alive(run(g, 20, 20, 80), 20), alive(g, 20));
+    // Kenardan taşan desen karşı kenara sarılır
+    const edge = grid(10, 10, [[9, 0], [0, 0], [1, 0]]); // yatay blinker, x kenarında
+    assert.deepEqual(alive(step(edge, 10, 10), 10), ['0,0', '0,1', '0,9']);
+  });
+
+  test('life: pulsar periyot 3, Gosper gun her 30 nesilde bir glider üretir', () => {
+    const p = grid(30, 30, PATTERNS.pulsar.cells, 8, 8);
+    assert.equal(PATTERNS.pulsar.cells.length, 48);
+    assert.notDeepEqual(alive(step(p, 30, 30), 30), alive(p, 30));
+    assert.deepEqual(alive(run(p, 30, 30, 3), 30), alive(p, 30));
+    let gun = grid(COLS, ROWS, PATTERNS.gun.cells, 2, 2);
+    const pop = (c) => c.reduce((a, b) => a + b, 0);
+    assert.equal(pop(gun), 36);
+    for (let k = 1; k <= 4; k++) {
+      gun = run(gun, COLS, ROWS, 30);
+      assert.equal(pop(gun), 36 + 5 * k);
+    }
+  });
+
+  test('life: RLE ayrıştırma', () => {
+    assert.deepEqual(parseRLE('bo$2bo$3o!'), [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]]);
+    assert.deepEqual(parseRLE('2o2$o!'), [[0, 0], [1, 0], [0, 2]]);
+  });
+
+  test('life: kontroller (Space, N, C, R, +/−, desen, çizim) ve game over olmaması', () => {
+    const { game, input, step: tick } = fakeEngine(LifeGame);
+    assert.equal(game.state, 'playing');
+    assert.equal(game.canPause(), true);
+    input.pressed.add('KeyN');
+    tick();
+    assert.equal(game.generation, 1);
+    input.pressed.add('KeyC');
+    tick();
+    assert.equal(game.population, 0);
+    input.pressed.add('Digit1');
+    tick();
+    assert.equal(game.population, 5);
+    const s = game.speed;
+    input.typed.add('+');
+    tick();
+    assert.equal(game.speed, s + 1);
+    input.typed.add('-');
+    tick();
+    assert.equal(game.speed, s);
+    input.pressed.add('Space');
+    tick();
+    assert.equal(game.running, true);
+    for (let i = 0; i < 120; i++) tick();
+    assert.ok(game.generation > 10);
+    assert.equal(game.state, 'playing');
+    input.pressed.add('KeyC');
+    tick();
+    // Sürükleyerek çizim: (0,0) → (200,0) arası kesintisiz 21 hücre
+    input.pressed.add('Space'); // durdur
+    Object.assign(input.pointer, { x: 5, y: 5, startX: 5, startY: 5, isDown: true, pressed: true, button: 0 });
+    tick();
+    Object.assign(input.pointer, { x: 205, y: 5 });
+    tick();
+    input.pointer.isDown = false;
+    tick();
+    assert.equal(game.running, false);
+    assert.equal(game.population, 21);
   });
 }
 

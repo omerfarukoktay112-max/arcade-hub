@@ -247,6 +247,52 @@ const SCENARIOS = {
     await evaluate(`${G}.cards.forEach(c => c.target = 1)`); // görsel kontrol için tüm yüzler
     await sleep(400);
   },
+
+  async life() {
+    await evaluate(`${G}.init()`);
+    await key('KeyC');
+    expect(await evaluate(`${G}.population`) === 0, 'life: C temizlemedi');
+    // Fareyle sürükleyerek çizim
+    const pt = await evaluate(`(() => { const r = document.getElementById('game-canvas').getBoundingClientRect();
+      return { x: r.left + 105 * r.width / 800, y: r.top + 205 * r.height / 600, sx: r.width / 800 }; })()`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let k = 1; k <= 10; k++) {
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x + k * 30 * pt.sx, y: pt.y, button: 'left', buttons: 1 });
+      await sleep(20);
+    }
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x + 300 * pt.sx, y: pt.y, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(100);
+    const drawn = await evaluate(`${G}.population`);
+    expect(drawn === 31, `life: sürükleyerek çizim 31 hücre bekleniyordu, ${drawn}`);
+    await key('Digit3');
+    await key('Space');
+    await sleep(800);
+    const s = await evaluate(`({ run: ${G}.running, gen: ${G}.generation })`);
+    expect(s.run && s.gen > 3, `life: Space ile çalışmadı ${JSON.stringify(s)}`);
+    // Dokunmatik araç çubuğu: OYNAT/DURDUR düğmesi
+    const r = await evaluate(`${G}.tools.find(t => t.id === 'run').rect`);
+    await clickCanvas(r.x + r.w / 2, r.y + r.h / 2);
+    expect(!(await evaluate(`${G}.running`)), 'life: araç çubuğu DURDUR düğmesi çalışmadı');
+    const pop = await evaluate(`${G}.population`);
+    const t = await evaluate(`${G}.tools.find(t => t.id === 'clear').rect`);
+    await clickCanvas(t.x + t.w / 2, t.y + t.h / 2);
+    expect(pop > 0 && (await evaluate(`${G}.population`)) === 0, 'life: araç çubuğu TEMİZLE düğmesi çalışmadı');
+    const pt2 = await evaluate(`${G}.tools.find(t => t.id === 'pattern').rect`);
+    await clickCanvas(pt2.x + pt2.w / 2, pt2.y + pt2.h / 2);
+    expect((await evaluate(`${G}.population`)) === 5, 'life: araç çubuğu desen (glider) düğmesi çalışmadı');
+  },
+
+  async lightsout() {
+    await evaluate(`${G}.restart()`);
+    const initial = await evaluate(`${G}.grid.join('')`);
+    await clickCanvas(24 + 41, 54 + 41); // sol üst hücre
+    expect((await evaluate(`${G}.moves`)) === 1, 'lightsout: hücre tıklaması hamle saymadı');
+    await clickCanvas(24 + 75, 550 - 21); // SIFIRLA
+    expect((await evaluate(`${G}.grid.join('')`)) === initial, 'lightsout: SIFIRLA düğmesi başlangıca döndürmedi');
+    await clickCanvas(184 + 65, 550 - 21); // İPUCU
+    expect((await evaluate(`${G}.hintCell`)) >= 0, 'lightsout: İPUCU düğmesi hücre göstermedi');
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
