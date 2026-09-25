@@ -730,6 +730,57 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Memory ======================= */
+{
+  const { MemoryGame, createDeck, computeScore, PAIRS, MISMATCH_DELAY } = await import('../js/games/MemoryGame.js');
+
+  test('memory: deste 8 çift içerir ve karıştırılır', () => {
+    const deck = createDeck(seeded(3));
+    assert.equal(deck.length, 16);
+    for (let f = 0; f < PAIRS; f++) assert.equal(deck.filter((x) => x === f).length, 2);
+    assert.notDeepEqual(deck, createDeck(seeded(4)));
+  });
+
+  test('memory: az hamle daha çok puan', () => {
+    assert.equal(computeScore(8), 1000);
+    for (let m = 9; m < 40; m++) assert.ok(computeScore(m) <= computeScore(m - 1));
+    assert.ok(computeScore(9) < computeScore(8));
+    assert.equal(computeScore(200), 50);
+  });
+
+  test('memory: eşleşmeyen kartlar kilitlenir, süre dolunca kapanır; kusursuz oyun 1000 puan', () => {
+    const { game, step } = fakeEngine(MemoryGame);
+    game.start();
+    const faces = game.cards.map((c) => c.face);
+    const a = 0;
+    const b = faces.findIndex((f, i) => i !== a && f !== faces[a]);
+    game.flipCard(a);
+    game.flipCard(b);
+    assert.equal(game.moves, 1);
+    const third = faces.findIndex((f, i) => i !== a && i !== b);
+    game.flipCard(third);
+    assert.equal(game.cards[third].target, 0, 'kilitliyken yeni kart açılmamalı');
+    for (let t = 0; t < Math.ceil(MISMATCH_DELAY * 60) + 2; t++) step();
+    assert.equal(game.cards[a].target, 0);
+    assert.equal(game.cards[b].target, 0);
+    assert.deepEqual(game.open, []);
+
+    const { game: g2 } = fakeEngine(MemoryGame);
+    g2.start();
+    const done = new Set();
+    g2.cards.forEach((c, i) => {
+      if (done.has(i)) return;
+      const j = g2.cards.findIndex((d, k) => k !== i && d.face === c.face);
+      done.add(i).add(j);
+      g2.flipCard(i);
+      g2.flipCard(j);
+    });
+    assert.equal(g2.state, 'won');
+    assert.equal(g2.moves, 8);
+    assert.equal(g2.score, 1000);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {

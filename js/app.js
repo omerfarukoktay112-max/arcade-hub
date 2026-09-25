@@ -13,6 +13,7 @@ import { FlappyGame } from './games/FlappyGame.js';
 import { TicTacToeGame } from './games/TicTacToeGame.js';
 import { ConnectFourGame } from './games/ConnectFourGame.js';
 import { LightsOutGame } from './games/LightsOutGame.js';
+import { MemoryGame } from './games/MemoryGame.js';
 
 const GAMES = [
   SnakeGame,
@@ -25,6 +26,7 @@ const GAMES = [
   TicTacToeGame,
   ConnectFourGame,
   LightsOutGame,
+  MemoryGame,
 ];
 
 const DEFAULT_ID = SnakeGame.meta.id;

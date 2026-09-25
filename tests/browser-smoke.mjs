@@ -234,6 +234,19 @@ const SCENARIOS = {
     expect(n === 4, `connect4: klavye + AI hamlesi bekleniyordu, tahtada ${n} taş`);
     expect(await evaluate(`${G}.board.some(r => r[2] === 1)`), 'connect4: klavye ile seçilen sütuna düşmedi');
   },
+
+  async memory() {
+    await evaluate(`${G}.restart()`);
+    // Bir eşleşen çifti gerçek tıklamalarla aç
+    const pos = (i) => [18 + (i % 4) * 144 + 66, 56 + Math.floor(i / 4) * 144 + 66];
+    const pair = await evaluate(`(() => { const c = ${G}.cards; const j = c.findIndex((d, k) => k > 0 && d.face === c[0].face); return j; })()`);
+    await clickCanvas(...pos(0));
+    await clickCanvas(...pos(pair));
+    await sleep(300);
+    expect(await evaluate(`${G}.found === 1 && ${G}.moves === 1`), 'memory: eşleşen çift tıklamayla bulunmadı');
+    await evaluate(`${G}.cards.forEach(c => c.target = 1)`); // görsel kontrol için tüm yüzler
+    await sleep(400);
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
