@@ -15,6 +15,8 @@ const PIPE_SPEED = 170;
 export const GAP_MIN = 138;
 export const GAP_MAX = 178;
 const EDGE = 50; // boşluğun tavana/zemine en az uzaklığı
+/** Ardışık iki boşluk arasındaki en büyük dikey kayma (her zaman yetişilebilir kalsın). */
+export const MAX_GAP_SHIFT = 130;
 
 /* ---------------- Saf mantık ---------------- */
 
@@ -24,11 +26,18 @@ export function birdStep(y, vy, dt) {
   return { y: y + nvy * dt, vy: nvy };
 }
 
-/** Rastgele boşluk yüksekliği ve konumuyla boru. */
-export function makePipe(x, rng = Math.random) {
+/**
+ * Rastgele boşluk yüksekliği ve konumuyla boru. prevGapY verilirse yeni boşluk
+ * öncekinden en fazla MAX_GAP_SHIFT kadar kayar.
+ */
+export function makePipe(x, rng = Math.random, prevGapY = null) {
   const gapH = GAP_MIN + rng() * (GAP_MAX - GAP_MIN);
-  const minY = CEILING_Y + EDGE;
-  const maxY = GROUND_Y - EDGE - gapH;
+  let minY = CEILING_Y + EDGE;
+  let maxY = GROUND_Y - EDGE - gapH;
+  if (prevGapY !== null) {
+    minY = Math.max(minY, prevGapY - MAX_GAP_SHIFT);
+    maxY = Math.min(maxY, prevGapY + MAX_GAP_SHIFT);
+  }
   const gapY = minY + rng() * (maxY - minY);
   return { x, gapY, gapH, passed: false };
 }
@@ -62,6 +71,7 @@ export class FlappyGame extends BaseGame {
   constructor(engine) {
     super(engine);
     this.overlayDelay = 0.6;
+    this.rng = Math.random; // testlerde tohumlu üreteçle değiştirilebilir
     // Arka plan yıldızları (sabit, deterministik)
     this.stars = Array.from({ length: 40 }, (_, i) => ({
       x: (i * 97) % W, y: CEILING_Y + ((i * 53) % (GROUND_Y - CEILING_Y - 60)), s: 1 + (i % 3),
@@ -78,7 +88,7 @@ export class FlappyGame extends BaseGame {
 
   start() {
     super.start();
-    this.pipes = [makePipe(W + 40)];
+    this.pipes = [makePipe(W + 40, this.rng)];
     this.nextPipeIn = PIPE_SPACING;
     this.flap();
   }
@@ -121,7 +131,8 @@ export class FlappyGame extends BaseGame {
     for (const p of this.pipes) p.x -= dx;
     this.nextPipeIn -= dx;
     if (this.nextPipeIn <= 0) {
-      this.pipes.push(makePipe(W + 10));
+      const last = this.pipes[this.pipes.length - 1];
+      this.pipes.push(makePipe(W + 10, this.rng, last ? last.gapY : null));
       this.nextPipeIn += PIPE_SPACING;
     }
     this.pipes = this.pipes.filter((p) => p.x + PIPE_W > -10);

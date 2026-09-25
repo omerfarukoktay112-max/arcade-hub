@@ -15,6 +15,9 @@ export const AI_DEPTH = 5;
 const COLORS = { 1: NEON.pink, 2: NEON.yellow };
 const WIN_SCORE = 1_000_000;
 
+/** Seans skor tablosu: sayfa açık kaldıkça (oyunlar arası geçişte de) korunur, kaydedilmez. */
+const sessionTally = { 1: 0, 2: 0, draw: 0 };
+
 /* ---------------- Saf mantık ---------------- */
 
 export const createBoard = () => Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -140,7 +143,7 @@ export class ConnectFourGame extends BaseGame {
     this.overlayDelay = 1;
     this.overlayDim = 0.6;
     this.mode = this.storage.get('connect4:mode', 1) === 2 ? 2 : 1;
-    this.tally = { 1: 0, 2: 0, draw: 0 };
+    this.tally = sessionTally;
     this.menuButtons = [
       { label: '1 Oyuncu', key: 'Digit1', selected: () => this.mode === 1, onClick: () => this.setMode(1) },
       { label: '2 Oyuncu', key: 'Digit2', selected: () => this.mode === 2, onClick: () => this.setMode(2) },

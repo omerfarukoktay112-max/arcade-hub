@@ -7,6 +7,9 @@ const BX = (W - CELL * 3) / 2;
 const BY = 52;
 const AI_DELAY = 0.45;
 
+/** Seans skor tablosu: sayfa açık kaldıkça (oyunlar arası geçişte de) korunur, kaydedilmez. */
+const sessionTally = { X: 0, O: 0, draw: 0 };
+
 /* ---------------- Saf mantık ---------------- */
 
 export const LINES = [
@@ -95,7 +98,7 @@ export class TicTacToeGame extends BaseGame {
     this.overlayDim = 0.6;
     this.mode = this.storage.get('ttt:mode', 1) === 2 ? 2 : 1;
     this.difficulty = this.storage.get('ttt:difficulty', 'hard') === 'easy' ? 'easy' : 'hard';
-    this.tally = { X: 0, O: 0, draw: 0 }; // yalnızca bu seans
+    this.tally = sessionTally;
     this.menuButtons = [
       { label: '1 Oyuncu', key: 'Digit1', group: 0, selected: () => this.mode === 1, onClick: () => this.setOption('mode', 1) },
       { label: '2 Oyuncu', key: 'Digit2', group: 0, selected: () => this.mode === 2, onClick: () => this.setOption('mode', 2) },

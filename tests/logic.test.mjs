@@ -473,7 +473,7 @@ export function fakeEngine(Game) {
 /* ======================= Flappy ======================= */
 {
   const F = await import('../js/games/FlappyGame.js');
-  const { FlappyGame, birdStep, makePipe, hitsPipe, GROUND_Y, CEILING_Y, GAP_MIN, GAP_MAX, BIRD_X, PIPE_W } = F;
+  const { FlappyGame, birdStep, makePipe, hitsPipe, GROUND_Y, CEILING_Y, GAP_MIN, GAP_MAX, BIRD_X, PIPE_W, MAX_GAP_SHIFT } = F;
 
   test('flappy: fizik dt tabanlı (farklı kare hızlarında benzer sonuç)', () => {
     const sim = (dt) => {
@@ -494,6 +494,9 @@ export function fakeEngine(Game) {
       assert.ok(p.gapH >= GAP_MIN && p.gapH <= GAP_MAX);
       assert.ok(p.gapY >= CEILING_Y + 40 && p.gapY + p.gapH <= GROUND_Y - 40);
       sizes.add(Math.round(p.gapH));
+      const q = makePipe(0, rng, p.gapY);
+      assert.ok(Math.abs(q.gapY - p.gapY) <= MAX_GAP_SHIFT, 'ardışık boşluk kayması sınırı aşıldı');
+      assert.ok(q.gapY >= CEILING_Y + 40 && q.gapY + q.gapH <= GROUND_Y - 40);
     }
     assert.ok(sizes.size > 10);
   });
@@ -513,16 +516,21 @@ export function fakeEngine(Game) {
     assert.equal(idle.game.state, 'over');
     assert.equal(idle.game.score, 0);
 
-    const bot = fakeEngine(FlappyGame);
-    bot.game.start();
-    for (let i = 0; i < 60 * 20 && bot.game.state === 'playing'; i++) {
-      const g = bot.game;
-      const next = g.pipes.find((p) => p.x + PIPE_W > BIRD_X - 20);
-      const target = next ? next.gapY + next.gapH * 0.62 : 300;
-      if (g.bird.y > target && g.bird.vy > 0) bot.input.pressed.add('Space');
-      bot.step();
+    // Basit bot: sıradaki boşluğun biraz altına düşünce zıplar. Farklı tohumlarda
+    // her zaman ilerleyebilmeli (ardışık boşluklar her zaman yetişilebilir).
+    for (let seed = 1; seed <= 12; seed++) {
+      const bot = fakeEngine(FlappyGame);
+      bot.game.rng = seeded(seed);
+      bot.game.start();
+      for (let i = 0; i < 60 * 20 && bot.game.state === 'playing'; i++) {
+        const g = bot.game;
+        const next = g.pipes.find((p) => p.x + PIPE_W > BIRD_X - 20);
+        const target = next ? next.gapY + next.gapH * 0.62 : 300;
+        if (g.bird.y > target && g.bird.vy > 0) bot.input.pressed.add('Space');
+        bot.step();
+      }
+      assert.ok(bot.game.score >= 10, `tohum ${seed}: bot yalnızca ${bot.game.score} boru geçti`);
     }
-    assert.ok(bot.game.score >= 5, `bot yalnızca ${bot.game.score} boru geçti`);
   });
 }
 

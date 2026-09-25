@@ -423,7 +423,70 @@ try {
     await shot(`mobile-${id}`);
   }
   await sleep(300);
-  console.log(`\n${games.length} oyun hash/menü/hızlı geçiş/mobil kontrolünden geçirildi.`);
+
+  // 5) Dokunmatik girdi (touch emülasyonu): tap, uzun basış, swipe
+  const css = (lx, ly) => evaluate(`(() => { const r = document.getElementById('game-canvas').getBoundingClientRect();
+    const e = window.arcadeHub.engine; return { x: r.left + ${lx} * r.width / e.width, y: r.top + ${ly} * r.height / e.height }; })()`);
+  const touch = async (lx, ly, { hold = 60, dx = 0, dy = 0 } = {}) => {
+    const p = await css(lx, ly);
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] });
+    const steps = dx || dy ? 6 : 0;
+    for (let k = 1; k <= steps; k++) {
+      await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: p.x + (dx * k) / steps, y: p.y + (dy * k) / steps }] });
+      await sleep(16);
+    }
+    await sleep(hold);
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(80);
+  };
+  const go = async (id) => {
+    await evaluate(`location.hash = ${JSON.stringify(id)}`);
+    await sleep(200);
+  };
+
+  await go('flappy');
+  await evaluate(`${G}.init()`);
+  await touch(200, 300);
+  expect((await state()).state === 'playing', 'dokunma: Flappy dokunarak başlamadı');
+
+  await go('2048');
+  await evaluate(`${G}.restart(); ${G}.grid = [[2,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]`);
+  await touch(250, 250, { dx: 90 });
+  await sleep(200);
+  expect(await evaluate(`${G}.grid[0][3] === 2`), 'dokunma: 2048 sağa swipe çalışmadı');
+
+  await go('snake');
+  await evaluate(`${G}.restart()`);
+  await touch(300, 300, { dy: -90 });
+  await sleep(300);
+  expect(await evaluate(`${G}.dir.y === -1`), 'dokunma: Snake yukarı swipe çalışmadı');
+
+  await go('tetris');
+  await evaluate(`${G}.restart()`);
+  const rot0 = await evaluate(`${G}.current.rot`);
+  await touch(150, 300);
+  expect((await evaluate(`${G}.current.rot`)) !== rot0, 'dokunma: Tetris dokunma döndürmedi');
+  const x0 = await evaluate(`${G}.current.x`);
+  const cellCss = (await css(30, 0)).x - (await css(0, 0)).x;
+  await touch(150, 300, { dx: cellCss * 3.4 });
+  expect((await evaluate(`${G}.current.x`)) === x0 + 3, 'dokunma: Tetris sürükleme 3 hücre kaydırmadı');
+
+  await go('minesweeper');
+  await evaluate(`${G}.setDifficulty('easy')`);
+  await touch(180, 84 + 4 * 36 + 18);
+  expect((await state()).state === 'playing', 'dokunma: Minesweeper dokunmayla açılmadı');
+  const closed = await evaluate(`${G}.board.cells.findIndex(c => !c.open)`);
+  await touch(16 + 2 + (closed % 9) * 36 + 18, 84 + Math.floor(closed / 9) * 36 + 18, { hold: 600 });
+  expect(await evaluate(`${G}.board.cells[${closed}].flag`), 'dokunma: Minesweeper uzun basış bayrak koymadı');
+  expect(await evaluate(`${G}.board.cells[${closed}].open === false`), 'dokunma: uzun basış hücreyi de açtı');
+
+  await go('life');
+  const run = await evaluate(`${G}.tools.find(t => t.id === 'run').rect`);
+  await touch(run.x + run.w / 2, run.y + run.h / 2);
+  expect(await evaluate(`${G}.running`), 'dokunma: Life OYNAT düğmesi çalışmadı');
+  await shot('mobile-touch-life');
+
+  console.log(`\n${games.length} oyun hash/menü/hızlı geçiş/mobil/dokunmatik kontrolünden geçirildi.`);
 } catch (err) {
   problems.push(`test hatası: ${err.stack || err.message}`);
 }
