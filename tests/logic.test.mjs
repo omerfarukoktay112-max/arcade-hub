@@ -469,6 +469,62 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Flappy ======================= */
+{
+  const F = await import('../js/games/FlappyGame.js');
+  const { FlappyGame, birdStep, makePipe, hitsPipe, GROUND_Y, CEILING_Y, GAP_MIN, GAP_MAX, BIRD_X, PIPE_W } = F;
+
+  test('flappy: fizik dt tabanlı (farklı kare hızlarında benzer sonuç)', () => {
+    const sim = (dt) => {
+      let s = { y: 300, vy: -430 };
+      for (let t = 0; t < 0.6 - 1e-9; t += dt) s = birdStep(s.y, s.vy, dt);
+      return s.y;
+    };
+    const a = sim(1 / 144);
+    const b = sim(1 / 30);
+    assert.ok(Math.abs(a - b) < 12, `144fps ${a.toFixed(1)} vs 30fps ${b.toFixed(1)}`);
+  });
+
+  test('flappy: boru boşlukları rastgele ve sınırlar içinde', () => {
+    const rng = seeded(9);
+    const sizes = new Set();
+    for (let i = 0; i < 500; i++) {
+      const p = makePipe(0, rng);
+      assert.ok(p.gapH >= GAP_MIN && p.gapH <= GAP_MAX);
+      assert.ok(p.gapY >= CEILING_Y + 40 && p.gapY + p.gapH <= GROUND_Y - 40);
+      sizes.add(Math.round(p.gapH));
+    }
+    assert.ok(sizes.size > 10);
+  });
+
+  test('flappy: boru çarpışması', () => {
+    const pipe = { x: BIRD_X - PIPE_W / 2, gapY: 200, gapH: 150, passed: false };
+    assert.equal(hitsPipe(275, pipe), false);
+    assert.equal(hitsPipe(195, pipe), true);
+    assert.equal(hitsPipe(360, pipe), true);
+    assert.equal(hitsPipe(195, { ...pipe, x: BIRD_X + 40 }), false);
+  });
+
+  test('flappy: dokunulmazsa zemine düşer; bot boşlukları geçip puan alır', () => {
+    const idle = fakeEngine(FlappyGame);
+    idle.game.start();
+    for (let i = 0; i < 60 * 5 && idle.game.state === 'playing'; i++) idle.step();
+    assert.equal(idle.game.state, 'over');
+    assert.equal(idle.game.score, 0);
+
+    const bot = fakeEngine(FlappyGame);
+    bot.game.start();
+    for (let i = 0; i < 60 * 20 && bot.game.state === 'playing'; i++) {
+      const g = bot.game;
+      const next = g.pipes.find((p) => p.x + PIPE_W > BIRD_X - 20);
+      const target = next ? next.gapY + next.gapH * 0.62 : 300;
+      if (g.bird.y > target && g.bird.vy > 0) bot.input.pressed.add('Space');
+      bot.step();
+    }
+    assert.ok(bot.game.score >= 5, `bot yalnızca ${bot.game.score} boru geçti`);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {
