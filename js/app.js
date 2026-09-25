@@ -5,10 +5,12 @@
 import { Engine } from './core/Engine.js';
 import { SnakeGame } from './games/SnakeGame.js';
 import { Game2048 } from './games/Game2048.js';
+import { MinesweeperGame } from './games/MinesweeperGame.js';
 
 const GAMES = [
   SnakeGame,
   Game2048,
+  MinesweeperGame,
 ];
 
 const DEFAULT_ID = SnakeGame.meta.id;

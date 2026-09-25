@@ -114,6 +114,104 @@ export function seeded(seed = 1) {
   });
 }
 
+/* ======================= Minesweeper ======================= */
+{
+  const { createBoard, placeMines, reveal, chord, toggleFlag, isWon, DIFFICULTIES } = await import('../js/games/MinesweeperGame.js');
+
+  /** Metinden tahta: '*' mayın, '.' boş */
+  function boardFrom(rows) {
+    const b = createBoard(rows.length, rows[0].length);
+    rows.forEach((row, r) => [...row].forEach((ch, c) => {
+      b.cells[r * b.cols + c].mine = ch === '*';
+    }));
+    for (let i = 0; i < b.cells.length; i++) {
+      const r = Math.floor(i / b.cols);
+      const c = i % b.cols;
+      let n = 0;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = r + dr;
+        const cc = c + dc;
+        if ((dr || dc) && rr >= 0 && cc >= 0 && rr < b.rows && cc < b.cols && b.cells[rr * b.cols + cc].mine) n++;
+      }
+      b.cells[i].adj = n;
+    }
+    b.mines = b.cells.filter((x) => x.mine).length;
+    b.placed = true;
+    return b;
+  }
+
+  test('minesweeper: ilk tıklama asla mayın değil, mayın sayısı tam', () => {
+    for (const d of Object.values(DIFFICULTIES)) {
+      for (let seed = 1; seed <= 200; seed++) {
+        const rng = seeded(seed);
+        const r = Math.floor(rng() * d.rows);
+        const c = Math.floor(rng() * d.cols);
+        const b = placeMines(createBoard(d.rows, d.cols), d.mines, r, c, rng);
+        assert.equal(b.cells[r * d.cols + c].mine, false);
+        assert.equal(b.cells[r * d.cols + c].adj, 0, 'ilk tıklama bir alan açmalı');
+        assert.equal(b.cells.filter((x) => x.mine).length, d.mines);
+        assert.equal(reveal(b, r, c).hitMine, false);
+      }
+    }
+  });
+
+  test('minesweeper: komşu sayıları doğru', () => {
+    const b = placeMines(createBoard(9, 9), 10, 4, 4, seeded(11));
+    for (let i = 0; i < 81; i++) {
+      const r = Math.floor(i / 9);
+      const c = i % 9;
+      let n = 0;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if ((dr || dc) && r + dr >= 0 && c + dc >= 0 && r + dr < 9 && c + dc < 9 && b.cells[(r + dr) * 9 + c + dc].mine) n++;
+      }
+      assert.equal(b.cells[i].adj, n);
+    }
+  });
+
+  test('minesweeper: flood-fill boş alanı açar, sayılarda durur, bayrağa girmez', () => {
+    const b = boardFrom([
+      '.....',
+      '.....',
+      '...**',
+      '...*.',
+    ]);
+    const res = reveal(b, 0, 0);
+    assert.equal(res.hitMine, false);
+    const open = b.cells.map((x) => (x.open ? 1 : 0)).join('');
+    // Satır 0-1 tamamen, satır 2-3'te yalnızca ilk üç sütun açılır; mayınlar ve (3,4) kapalı
+    assert.equal(open, '11111' + '11111' + '11100' + '11100');
+    // Bayrak flood-fill'i durdurur
+    const b2 = boardFrom(['....', '....', '....']);
+    toggleFlag(b2, 1, 1);
+    reveal(b2, 0, 0);
+    assert.equal(b2.cells[5].open, false);
+    assert.equal(isWon(b2), false);
+    toggleFlag(b2, 1, 1);
+    reveal(b2, 1, 1);
+    assert.equal(isWon(b2), true);
+  });
+
+  test('minesweeper: chord yalnızca bayrak sayısı eşitse açar', () => {
+    const b = boardFrom([
+      '*..',
+      '...',
+      '...',
+    ]);
+    reveal(b, 1, 1); // "1"
+    assert.equal(b.cells[4].adj, 1);
+    assert.equal(chord(b, 1, 1), null, 'bayraksız chord yapılmaz');
+    toggleFlag(b, 0, 0);
+    const res = chord(b, 1, 1);
+    assert.equal(res.hitMine, false);
+    assert.equal(isWon(b), true);
+    // Yanlış bayrakla chord mayına bastırır
+    const b2 = boardFrom(['*..', '...', '...']);
+    reveal(b2, 1, 1);
+    toggleFlag(b2, 0, 1);
+    assert.equal(chord(b2, 1, 1).hitMine, true);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {

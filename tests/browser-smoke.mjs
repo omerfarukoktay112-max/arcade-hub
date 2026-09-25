@@ -136,6 +136,36 @@ const SCENARIOS = {
     await key('ArrowDown');
     await sleep(300);
   },
+
+  async minesweeper() {
+    await key('Digit3');
+    let s = await state();
+    expect(s.w === 812 && s.h === 516, `minesweeper: Zor boyutu ${s.w}x${s.h}`);
+    await key('Digit1');
+    s = await state();
+    expect(s.state === 'ready' && s.w === 360, `minesweeper: Kolay'a dönmedi ${JSON.stringify(s)}`);
+    const cellPos = (i) => `(() => { const g = ${G}; const S = g.cfg.cell;
+      return { x: g.boardX + (${i} % g.cfg.cols) * S + S / 2, y: 84 + Math.floor(${i} / g.cfg.cols) * S + S / 2 }; })()`;
+    const first = await evaluate(cellPos(40));
+    await clickCanvas(first.x, first.y);
+    s = await state();
+    expect(s.state === 'playing', `minesweeper: ilk tıklamada başlamadı (${s.state})`);
+    const opened = await evaluate(`${G}.board.cells[40].open && !${G}.board.cells[40].mine`);
+    expect(opened, 'minesweeper: ilk tıklanan hücre açılmadı / mayın');
+    const closed = await evaluate(`${G}.board.cells.findIndex(c => !c.open)`);
+    const cp = await evaluate(cellPos(closed));
+    await clickCanvas(cp.x, cp.y, 'right');
+    expect(await evaluate(`${G}.board.cells[${closed}].flag`), 'minesweeper: sağ tık bayrak koymadı');
+    await clickCanvas(cp.x, cp.y, 'right');
+    const mine = await evaluate(`${G}.board.cells.findIndex(c => c.mine)`);
+    const mp = await evaluate(cellPos(mine));
+    await clickCanvas(mp.x, mp.y);
+    expect((await state()).state === 'over', 'minesweeper: mayına basınca bitmedi');
+    await sleep(800);
+    await shot('minesweeper-boom');
+    await key('Enter');
+    expect((await state()).state === 'ready', 'minesweeper: Enter ile yeniden başlamadı');
+  },
 };
 
 const state = () => evaluate(`(() => { const g = window.arcadeHub.engine.game;
