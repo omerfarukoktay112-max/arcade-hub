@@ -1,14 +1,14 @@
-import { BaseGame, NEON, HUD_HEIGHT, roundRect } from '../core/BaseGame.js';
+import { BaseGame, NEON, HUD_HEIGHT, roundRect, pointInRect } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
-const SIZE = 4;
 const BOARD = 440;
 const BOARD_X = 30;
 const BOARD_Y = HUD_HEIGHT + 12;
-const GAP = 12;
-const TILE = (BOARD - GAP * (SIZE + 1)) / SIZE;
 const SLIDE_TIME = 0.11;
 const POP_TIME = 0.14;
-const TARGET = 2048;
+/** Izgara boyutuna göre hedef karo: küçük tahtada daha az, büyükte daha çok. */
+export const TARGETS = { 3: 512, 4: 2048, 5: 4096, 6: 8192 };
+export const targetFor = (size) => TARGETS[size] || 2048;
 
 /* ---------------- Saf mantık ---------------- */
 
@@ -41,15 +41,15 @@ export function slideLine(line) {
 }
 
 /** Yön için çizgi koordinatları: her çizgi, hareket edilen kenardan başlar. */
-function linesFor(dir) {
+function linesFor(dir, size) {
   const lines = [];
-  for (let k = 0; k < SIZE; k++) {
+  for (let k = 0; k < size; k++) {
     const line = [];
-    for (let i = 0; i < SIZE; i++) {
+    for (let i = 0; i < size; i++) {
       if (dir === 'left') line.push([k, i]);
-      else if (dir === 'right') line.push([k, SIZE - 1 - i]);
+      else if (dir === 'right') line.push([k, size - 1 - i]);
       else if (dir === 'up') line.push([i, k]);
-      else line.push([SIZE - 1 - i, k]);
+      else line.push([size - 1 - i, k]);
     }
     lines.push(line);
   }
@@ -57,7 +57,7 @@ function linesFor(dir) {
 }
 
 /**
- * Tüm ızgarayı bir yöne hareket ettirir (girdiyi değiştirmez).
+ * Tüm ızgarayı (her kare boyutta) bir yöne hareket ettirir (girdiyi değiştirmez).
  * Dönen: { grid, moved, gained, moves: [{fr, fc, tr, tc, value, merged}] }
  */
 export function moveGrid(grid, dir) {
@@ -65,7 +65,7 @@ export function moveGrid(grid, dir) {
   const moves = [];
   let gained = 0;
   let moved = false;
-  for (const coords of linesFor(dir)) {
+  for (const coords of linesFor(dir, grid.length)) {
     const res = slideLine(coords.map(([r, c]) => grid[r][c]));
     coords.forEach(([r, c], i) => {
       out[r][c] = res.values[i];
@@ -81,14 +81,15 @@ export function moveGrid(grid, dir) {
   return { grid: out, moved, gained, moves };
 }
 
-export function emptyGrid() {
-  return Array.from({ length: SIZE }, () => new Array(SIZE).fill(0));
+export function emptyGrid(size = 4) {
+  return Array.from({ length: size }, () => new Array(size).fill(0));
 }
 
 /** Boş bir hücreye %90 ihtimalle 2, %10 ihtimalle 4 koyar. Dönen: {r, c, value} | null */
 export function spawnTile(grid, rng = Math.random) {
   const empty = [];
-  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (!grid[r][c]) empty.push([r, c]);
+  const n = grid.length;
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (!grid[r][c]) empty.push([r, c]);
   if (!empty.length) return null;
   const [r, c] = empty[Math.floor(rng() * empty.length)];
   const value = rng() < 0.9 ? 2 : 4;
@@ -97,12 +98,13 @@ export function spawnTile(grid, rng = Math.random) {
 }
 
 export function canMove(grid) {
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
+  const n = grid.length;
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
       const v = grid[r][c];
       if (!v) return true;
-      if (c + 1 < SIZE && grid[r][c + 1] === v) return true;
-      if (r + 1 < SIZE && grid[r + 1][c] === v) return true;
+      if (c + 1 < n && grid[r][c + 1] === v) return true;
+      if (r + 1 < n && grid[r + 1][c] === v) return true;
     }
   }
   return false;
@@ -110,30 +112,96 @@ export function canMove(grid) {
 
 export const maxTile = (grid) => Math.max(...grid.flat());
 
+const ROMAN = [
+  [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
+  [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+];
+
+/** 1–3999 arası sayıyı Roma rakamına çevirir. */
+export function toRoman(n) {
+  let out = '';
+  let v = Math.floor(n);
+  for (const [value, sym] of ROMAN) {
+    while (v >= value) {
+      out += sym;
+      v -= value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Büyük sayılar için Roma rakamı parçaları: 4000 ve üstünde binler "vinculum" (üst çizgi = ×1000)
+ * ile yazılır. Dönen: { high, low } — high üst çizgiyle çizilir (ör. 8192 → { high: 'VIII', low: 'CXCII' }).
+ */
+export function romanParts(n) {
+  if (n < 4000) return { high: '', low: toRoman(n) };
+  return { high: toRoman(Math.floor(n / 1000)), low: toRoman(n % 1000) };
+}
+
 /* ---------------- Oyun ---------------- */
 
 const TILE_COLORS = {
   2: NEON.cyan, 4: NEON.blue, 8: NEON.purple, 16: NEON.pink, 32: NEON.red, 64: NEON.orange,
   128: NEON.yellow, 256: NEON.green, 512: '#00ffd0', 1024: '#ff66ff', 2048: '#ffffff',
 };
-const tileColor = (v) => TILE_COLORS[v] || NEON.yellow;
-const cellX = (c) => BOARD_X + GAP + c * (TILE + GAP);
-const cellY = (r) => BOARD_Y + GAP + r * (TILE + GAP);
-const easeOut = (t) => 1 - (1 - t) * (1 - t);
+const tileColor = (v) => TILE_COLORS[v] || (v > 2048 ? '#ffffff' : NEON.yellow);
+const easeOut = (k) => 1 - (1 - k) * (1 - k);
 
 export class Game2048 extends BaseGame {
   static meta = {
     id: '2048',
-    title: '2048',
+    get title() { return t('2048.title'); },
     width: 500,
     height: 500,
-    controls: 'Ok tuşları / WASD ile kaydır · Mobilde kaydır (swipe)',
-    description: 'Aynı sayıları birleştirerek 2048 karosuna ulaş. Her hamlede yeni bir 2 ya da 4 gelir.',
+    theme: [NEON.orange, NEON.yellow],
+    get controls() { return t('2048.controls'); },
+    get description() { return t('2048.description'); },
   };
+
+  static settings = [
+    {
+      id: 'size', labelKey: 'set.gridSize', default: 4,
+      options: [3, 4, 5, 6].map((n) => ({ value: n, label: `${n}×${n}`, note: String(targetFor(n)) })),
+    },
+    {
+      id: 'numerals', labelKey: 'set.numerals', live: true, default: 'arabic',
+      options: [
+        { value: 'arabic', labelKey: '2048.arabic' },
+        { value: 'roman', labelKey: '2048.roman' },
+      ],
+    },
+  ];
+
+  get size() {
+    return this.settings.size;
+  }
+  get target() {
+    return targetFor(this.size);
+  }
+  /** 4×4 eski rekor anahtarını korur; diğer boyutların ayrı rekoru vardır. */
+  get recordKey() {
+    return this.size === 4 ? '2048' : `2048-${this.size}`;
+  }
+
+  /** Boyuta göre karo ve boşluk ölçüleri. */
+  metrics() {
+    const n = this.size;
+    const gap = n <= 4 ? 12 : n === 5 ? 10 : 8;
+    return { n, gap, tile: (BOARD - gap * (n + 1)) / n };
+  }
+  cellX(c) {
+    const { gap, tile } = this.metrics();
+    return BOARD_X + gap + c * (tile + gap);
+  }
+  cellY(r) {
+    const { gap, tile } = this.metrics();
+    return BOARD_Y + gap + r * (tile + gap);
+  }
 
   reset() {
     super.reset();
-    this.grid = emptyGrid();
+    this.grid = emptyGrid(this.size);
     this.continued = false;
     this.slide = null; // { t, moves, spawn }
     this.effects = []; // { r, c, kind: 'pop'|'appear', t }
@@ -191,11 +259,11 @@ export class Game2048 extends BaseGame {
     this.slide = { t: 0, moves: res.moves, spawn };
     this.sound.beep(res.gained ? 520 + Math.min(600, Math.log2(res.gained) * 40) : 300, 0.05, { type: 'triangle' });
 
-    if (!this.continued && maxTile(this.grid) >= TARGET) {
+    if (!this.continued && maxTile(this.grid) >= this.target) {
       this.gameOver(true);
       this.menuButtons = [
-        { label: 'Devam et', key: 'Space', color: NEON.green, onClick: () => this.continueGame() },
-        { label: 'Yeniden', key: 'Enter', color: NEON.pink, onClick: () => this.restart() },
+        { get label() { return t('2048.continue'); }, key: 'Space', color: NEON.green, onClick: () => this.continueGame() },
+        { get label() { return t('2048.again'); }, key: 'Enter', color: NEON.pink, onClick: () => this.restart() },
       ];
     } else if (!canMove(this.grid)) {
       this.gameOver(false);
@@ -208,7 +276,7 @@ export class Game2048 extends BaseGame {
     const layout = this.overlayLayout();
     const p = this.input.pointer;
     for (const b of layout.buttons) {
-      if (this.input.wasPressed(b.key) || (p.clicked && p.x >= b.rect.x && p.x <= b.rect.x + b.rect.w && p.y >= b.rect.y && p.y <= b.rect.y + b.rect.h)) {
+      if (this.input.wasPressed(b.key) || (p.clicked && pointInRect(p, b.rect))) {
         b.onClick();
         return;
       }
@@ -225,20 +293,30 @@ export class Game2048 extends BaseGame {
   overlayContent() {
     const c = super.overlayContent();
     if (this.state === 'won') {
-      c.title = '2048! KAZANDIN';
-      c.hint = 'Space: devam et · Enter: yeniden başla';
+      c.title = t('2048.wonTitle', { v: this.formatTile(this.target) });
+      c.hint = t('2048.wonHint');
     }
     return c;
   }
 
+  /**
+   * Karo değerinin düz metin gösterimi (HUD, başlık). Roma modunda 4000'in altı Roma rakamıdır;
+   * üstünde üst çizgi (vinculum) düz metinde güvenilir çizilemediğinden sayı olarak kalır.
+   */
+  formatTile(value) {
+    return this.settings.numerals === 'roman' && value < 4000 ? toRoman(value) : String(value);
+  }
+
   drawTile(x, y, value, scale = 1) {
     const ctx = this.ctx;
+    const TILE = this.metrics().tile;
     const color = tileColor(value);
     const s = TILE * scale;
     const ox = x + (TILE - s) / 2;
     const oy = y + (TILE - s) / 2;
+    const radius = Math.min(10, TILE * 0.12);
     ctx.save();
-    roundRect(ctx, ox, oy, s, s, 10 * scale);
+    roundRect(ctx, ox, oy, s, s, radius * scale);
     ctx.fillStyle = '#0d0d1e';
     ctx.fill();
     ctx.globalAlpha = 0.16 + Math.min(0.3, Math.log2(value) * 0.025);
@@ -253,13 +331,53 @@ export class Game2048 extends BaseGame {
     }
     ctx.stroke();
     ctx.restore();
+    const glow = value >= 128 ? 10 : 0;
+    const cx = x + TILE / 2;
+    const cy = y + TILE / 2 + 2;
+    const k = (TILE / 101) * scale; // 4×4'teki karo boyutuna göre ölçek
+    if (this.settings.numerals === 'roman') {
+      this.drawRoman(value, cx, cy, TILE * scale, k, color, glow);
+      return;
+    }
     const digits = String(value).length;
-    const size = (digits <= 2 ? 40 : digits === 3 ? 34 : digits === 4 ? 28 : 22) * scale;
-    this.text(String(value), x + TILE / 2, y + TILE / 2 + 2, { size, color, glow: value >= 128 ? 10 : 0 });
+    const size = (digits <= 2 ? 40 : digits === 3 ? 34 : digits === 4 ? 28 : 22) * k;
+    this.text(String(value), cx, cy, { size, color, glow, maxWidth: TILE * 0.9 * scale });
+  }
+
+  /**
+   * Roma rakamı: yazı, dizinin uzunluğuna göre karoya sığacak kadar küçülür.
+   * 4000 ve üstünde binler üst satırda üst çizgiyle (×1000) gösterilir.
+   */
+  drawRoman(value, cx, cy, tile, k, color, glow) {
+    const { high, low } = romanParts(value);
+    const fit = (str, base) => Math.min(base * k, (tile * 0.84) / (Math.max(1, str.length) * 0.6));
+    if (!high) {
+      this.text(low, cx, cy, { size: fit(low, 34), color, glow, maxWidth: tile * 0.9 });
+      return;
+    }
+    const hs = fit(high, 24);
+    const ls = fit(low || 'I', 20);
+    const hy = cy - ls * 0.55;
+    this.text(high, cx, hy, { size: hs, color, glow, maxWidth: tile * 0.9 });
+    const ctx = this.ctx;
+    const w = Math.min(tile * 0.9, high.length * hs * 0.62);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.5, hs * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(cx - w / 2, hy - hs * 0.62);
+    ctx.lineTo(cx + w / 2, hy - hs * 0.62);
+    ctx.stroke();
+    ctx.restore();
+    if (low) this.text(low, cx, cy + hs * 0.55, { size: ls, color, glow, maxWidth: tile * 0.9 });
   }
 
   draw() {
     const ctx = this.ctx;
+    const { n, tile: TILE } = this.metrics();
+    const cellX = (c) => this.cellX(c);
+    const cellY = (r) => this.cellY(r);
+    const radius = Math.min(10, TILE * 0.12);
     ctx.save();
     roundRect(ctx, BOARD_X, BOARD_Y, BOARD, BOARD, 14);
     ctx.fillStyle = '#0b0b18';
@@ -268,9 +386,9 @@ export class Game2048 extends BaseGame {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.fillStyle = NEON.grid;
-    for (let r = 0; r < SIZE; r++) {
-      for (let c = 0; c < SIZE; c++) {
-        roundRect(ctx, cellX(c), cellY(r), TILE, TILE, 10);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        roundRect(ctx, cellX(c), cellY(r), TILE, TILE, radius);
         ctx.fill();
       }
     }
@@ -285,8 +403,8 @@ export class Game2048 extends BaseGame {
         this.drawTile(x, y, m.value);
       }
     } else {
-      for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
           const v = this.grid[r][c];
           if (!v) continue;
           let scale = 1;
@@ -300,6 +418,6 @@ export class Game2048 extends BaseGame {
       }
     }
 
-    this.drawHUD(this.continued ? 'DEVAM MODU' : `EN BÜYÜK ${maxTile(this.grid)}`);
+    this.drawHUD(this.continued ? t('2048.continued') : t('2048.max', { v: this.formatTile(maxTile(this.grid)) }));
   }
 }

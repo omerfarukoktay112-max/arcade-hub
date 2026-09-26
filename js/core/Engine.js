@@ -1,28 +1,40 @@
 /**
  * Engine — oyun döngüsü, canvas yönetimi (HiDPI), duraklatma ve oyun yükleme.
  *
- * Döngü sırası: update(dt) → temizle → draw() → drawOverlay() → [duraklatma ekranı] → input.endFrame()
+ * Döngü sırası: update(dt) → temizle → draw() → drawOverlay() → [duraklatma ekranı] → [geçiş perdesi] → input.endFrame()
  * Oyunlar her zaman mantıksal pikselle çizer; devicePixelRatio ölçeklemesi burada yapılır.
+ * Oyun değişince canvas üzerinde oyunun tema rengiyle kısa bir "perde" geçişi oynatılır.
  */
 import { Input } from './Input.js';
 import { Storage } from './Storage.js';
 import { Sound } from './Sound.js';
-import { NEON, FONT } from './BaseGame.js';
+import { NEON, FONT, easeOutCubic, clamp } from './BaseGame.js';
+import { t } from './I18n.js';
 
 const MAX_DT = 0.1;
+const TRANSITION_TIME = 0.5;
+const SHUTTERS = 7;
+
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function currentDpr() {
   return Math.min(3, Math.max(1, window.devicePixelRatio || 1));
 }
 
 export class Engine {
-  constructor(canvas, { onChange = null } = {}) {
+  constructor(canvas, { onChange = null, onOpenSettings = null } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.storage = Storage;
     this.sound = new Sound(Storage);
     this.input = new Input(canvas);
     this.onChange = onChange;
+    /** Oyunların "⚙ Ayarlar" düğmesi bunu çağırır (app.js ayar panelini açar). */
+    this.openSettings = onOpenSettings;
+    /** true iken oyun güncellenmez ve girdi alınmaz (ör. ayar paneli açıkken); çizim sürer. */
+    this.suspended = false;
+    this.transition = null;
+    this.reducedMotion = false;
 
     this.width = canvas.width;
     this.height = canvas.height;
@@ -57,8 +69,11 @@ export class Engine {
     this.input.reset();
     this._errorLogged = false;
 
-    const { width, height } = GameClass.meta;
+    const { width, height, theme } = GameClass.meta;
     this.resizeCanvas(width, height);
+    // "Hareketi azalt" tercihinde panjurlar yerine yalnızca solma kullanılır (geçiş yine görünür).
+    this.reducedMotion = reducedMotion();
+    this.transition = { t: 0, colors: theme || [NEON.cyan, NEON.pink], fade: this.reducedMotion };
     const game = new GameClass(this);
     this.game = game;
     game.init();
@@ -80,6 +95,16 @@ export class Engine {
     this.canvas.style.setProperty('--ch', String(h));
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.input.setSize(w, h);
+  }
+
+  /** Oyunu dondurur/çözer. Çözülürken oynanan bir oyun varsa duraklatma ekranına geçer. */
+  setSuspended(on) {
+    this.suspended = !!on;
+    this.input.reset();
+    if (!on) {
+      this.lastTime = performance.now();
+      this.pause();
+    }
   }
 
   pause() {
@@ -119,7 +144,9 @@ export class Engine {
     if (currentDpr() !== this.dpr) this.resizeCanvas(this.width, this.height);
 
     try {
-      if (input.wasPressed('KeyP', 'Escape')) {
+      if (this.suspended) {
+        // Girdi yok sayılır; son kare olduğu gibi çizilir.
+      } else if (input.wasPressed('KeyP', 'Escape')) {
         input.consume('KeyP', 'Escape');
         this.togglePause();
       } else if (this.paused && input.pointer.clicked) {
@@ -127,7 +154,7 @@ export class Engine {
         this.resume();
       }
 
-      if (!this.paused) game.update(dt);
+      if (!this.paused && !this.suspended) game.update(dt);
       // Oyun bittiyse ya da artık duraklatılamıyorsa duraklatmayı kaldır.
       if (this.paused && !game.canPause()) this.resume();
 
@@ -141,6 +168,7 @@ export class Engine {
       game.drawOverlay();
       ctx.restore();
       if (this.paused) this._drawPause();
+      if (this.transition) this._drawTransition(dt);
     } catch (err) {
       if (!this._errorLogged) {
         this._errorLogged = true;
@@ -163,11 +191,58 @@ export class Engine {
     ctx.fillStyle = NEON.yellow;
     ctx.shadowColor = NEON.yellow;
     ctx.shadowBlur = 16;
-    ctx.fillText('DURAKLATILDI', w / 2, h / 2 - 18);
+    ctx.fillText(t('pause.title'), w / 2, h / 2 - 18, w - 24);
     ctx.shadowBlur = 0;
     ctx.font = `700 15px ${FONT}`;
     ctx.fillStyle = NEON.text;
-    ctx.fillText('Devam: P / Esc / dokun', w / 2, h / 2 + 24);
+    ctx.fillText(t('pause.hint'), w / 2, h / 2 + 24, w - 24);
+    ctx.restore();
+  }
+
+  /**
+   * Oyun geçiş perdesi: dikey panjurlar, soldan sağa kademeli olarak yukarı/aşağı çekilir;
+   * kenarlarında yeni oyunun tema renkleriyle parlayan bir çizgi vardır. Hareketi azalt
+   * tercihinde perde yerinde kararıp açılır (solma).
+   */
+  _drawTransition(dt) {
+    const tr = this.transition;
+    tr.t += dt;
+    if (tr.t >= TRANSITION_TIME) {
+      this.transition = null;
+      return;
+    }
+    const ctx = this.ctx;
+    const w = this.width;
+    const h = this.height;
+    if (tr.fade) {
+      ctx.save();
+      ctx.globalAlpha = 1 - easeOutCubic(tr.t / TRANSITION_TIME);
+      ctx.fillStyle = NEON.bg;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+      return;
+    }
+    const bw = w / SHUTTERS;
+    const stagger = 0.035;
+    const span = TRANSITION_TIME - stagger * (SHUTTERS - 1);
+    ctx.save();
+    for (let i = 0; i < SHUTTERS; i++) {
+      const k = easeOutCubic(clamp((tr.t - i * stagger) / span, 0, 1));
+      if (k >= 1) continue;
+      const up = i % 2 === 0;
+      const bh = h * (1 - k);
+      const y = up ? 0 : h - bh;
+      ctx.fillStyle = NEON.bg;
+      ctx.fillRect(i * bw - 0.5, y, bw + 1, bh);
+      const color = tr.colors[i % tr.colors.length];
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.globalAlpha = 1 - k * 0.6;
+      ctx.fillRect(i * bw, up ? bh - 3 : y, bw, 3);
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    }
     ctx.restore();
   }
 }

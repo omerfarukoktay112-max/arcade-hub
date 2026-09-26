@@ -1,52 +1,98 @@
 import { BaseGame, NEON, HUD_HEIGHT, roundRect, shuffle } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 const W = 600;
 const H = 650;
+/** Varsayılan (Normal) ızgara — eski testler ve rekor anahtarı bununla uyumlu. */
 export const COLS = 4;
 export const ROWS = 4;
 export const PAIRS = (COLS * ROWS) / 2;
-const CARD = 132;
 const GAP = 12;
-const GX = (W - (CARD * COLS + GAP * (COLS - 1))) / 2;
-const GY = HUD_HEIGHT + 16;
+const GRID_TOP = HUD_HEIGHT + 16;
+const GRID_BOTTOM = H - 30; // altta "eşleşen" satırı
 const FLIP_SPEED = 4; // 1 / 0.25 sn
 export const MISMATCH_DELAY = 0.8;
+
+/** Zorluk → ızgara (sütun × satır). Kart sayısı her zaman çifttir. */
+export const GRIDS = {
+  easy: { cols: 3, rows: 4 },
+  normal: { cols: 4, rows: 4 },
+  hard: { cols: 4, rows: 5 },
+  expert: { cols: 5, rows: 6 },
+};
+
+/** Izgaranın kare kart boyutu ve sol üst köşesi (alan içinde ortalanmış). */
+export function gridLayout(cols, rows) {
+  const card = Math.floor(Math.min(
+    (W - 36 - GAP * (cols - 1)) / cols,
+    (GRID_BOTTOM - GRID_TOP - GAP * (rows - 1)) / rows,
+  ));
+  const gw = card * cols + GAP * (cols - 1);
+  const gh = card * rows + GAP * (rows - 1);
+  return { card, gx: (W - gw) / 2, gy: GRID_TOP + (GRID_BOTTOM - GRID_TOP - gh) / 2 };
+}
 
 const SHAPES = ['circle', 'square', 'triangle', 'diamond', 'star', 'hexagon', 'ring', 'cross'];
 const COLORS = [NEON.cyan, NEON.pink, NEON.yellow, NEON.green, NEON.purple, NEON.orange, NEON.blue, NEON.red];
 
 /* ---------------- Saf mantık ---------------- */
 
-/** 8 çift: her yüz (şekil+renk) tam iki kez, karıştırılmış. */
-export function createDeck(rng = Math.random) {
+/** `pairs` çift: her yüz (şekil+renk) tam iki kez, karıştırılmış. */
+export function createDeck(rng = Math.random, pairs = PAIRS) {
   const faces = [];
-  for (let i = 0; i < PAIRS; i++) faces.push(i, i);
+  for (let i = 0; i < pairs; i++) faces.push(i, i);
   return shuffle(faces, rng);
 }
 
-/** Daha az hamle → daha çok puan. En iyi durum (8 hamle) 1000 puan. */
-export const computeScore = (moves) => Math.max(50, 1000 - Math.max(0, moves - PAIRS) * 40);
+/**
+ * Yüz numarası → { shape, color } (8 şekil × 8 renk). İlk 8 yüzde şekil ve renk aynı sıradadır;
+ * sonrakilerde renk kaydırılır, böylece 64 yüze kadar her yüz benzersizdir.
+ */
+export const faceOf = (face) => ({ shape: face % 8, color: (face + 3 * Math.floor(face / 8)) % 8 });
+
+/** Daha az hamle → daha çok puan. En iyi durum (hamle = çift sayısı) çift başına 125 puan (8 çift: 1000). */
+export const computeScore = (moves, pairs = PAIRS) => Math.max(50, pairs * 125 - Math.max(0, moves - pairs) * 40);
 
 /* ---------------- Oyun ---------------- */
 
 export class MemoryGame extends BaseGame {
   static meta = {
     id: 'memory',
-    title: 'Memory Match',
+    get title() { return t('memory.title'); },
     width: W,
     height: H,
-    controls: 'Tıkla / dokun ya da oklar + Enter ile kart çevir',
-    description: 'Kartları çevirip aynı şekil ve renkteki çiftleri bul. Ne kadar az hamle, o kadar çok puan.',
+    theme: [NEON.purple, NEON.pink],
+    get controls() { return t('memory.controls'); },
+    get description() { return t('memory.description'); },
   };
+
+  static settings = [
+    {
+      id: 'grid', labelKey: 'set.difficulty', default: 'normal',
+      options: Object.entries(GRIDS).map(([value, g]) => ({
+        value, labelKey: `memory.grid.${value}`, note: `${g.cols}×${g.rows}`,
+      })),
+    },
+  ];
 
   constructor(engine) {
     super(engine);
     this.overlayDelay = 0.6;
   }
 
+  /** Normal ızgara eski rekor anahtarını korur; diğer zorlukların ayrı rekoru vardır. */
+  get recordKey() {
+    return this.settings.grid === 'normal' ? 'memory' : `memory-${this.settings.grid}`;
+  }
+
   reset() {
     super.reset();
-    this.cards = createDeck().map((face) => ({ face, flip: 0, target: 0, matched: false, matchT: 0 }));
+    const { cols, rows } = GRIDS[this.settings.grid] || GRIDS.normal;
+    this.cols = cols;
+    this.rows = rows;
+    this.pairs = (cols * rows) / 2;
+    Object.assign(this, gridLayout(cols, rows));
+    this.cards = createDeck(Math.random, this.pairs).map((face) => ({ face, flip: 0, target: 0, matched: false, matchT: 0 }));
     this.open = [];
     this.lockTimer = 0;
     this.moves = 0;
@@ -80,9 +126,10 @@ export class MemoryGame extends BaseGame {
     for (const [code, [dr, dc]] of Object.entries(moves)) {
       if (input.wasPressed(code)) {
         this.showCursor = true;
-        const r = (Math.floor(this.cursor / COLS) + dr + ROWS) % ROWS;
-        const c = ((this.cursor % COLS) + dc + COLS) % COLS;
-        this.cursor = r * COLS + c;
+        const { cols, rows } = this;
+        const r = (Math.floor(this.cursor / cols) + dr + rows) % rows;
+        const c = ((this.cursor % cols) + dc + cols) % cols;
+        this.cursor = r * cols + c;
       }
     }
     if (input.wasPressed('Enter', 'Space')) {
@@ -101,11 +148,12 @@ export class MemoryGame extends BaseGame {
   }
 
   cardAt(x, y) {
-    const c = Math.floor((x - GX) / (CARD + GAP));
-    const r = Math.floor((y - GY) / (CARD + GAP));
-    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return -1;
-    if ((x - GX) % (CARD + GAP) > CARD || (y - GY) % (CARD + GAP) > CARD) return -1;
-    return r * COLS + c;
+    const { card: CARD, gx, gy, cols, rows } = this;
+    const c = Math.floor((x - gx) / (CARD + GAP));
+    const r = Math.floor((y - gy) / (CARD + GAP));
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return -1;
+    if ((x - gx) % (CARD + GAP) > CARD || (y - gy) % (CARD + GAP) > CARD) return -1;
+    return r * cols + c;
   }
 
   flipCard(i) {
@@ -123,8 +171,8 @@ export class MemoryGame extends BaseGame {
       this.open = [];
       this.found++;
       this.sound.seq([[660, 0.06], [990, 0.1]], { type: 'triangle' });
-      if (this.found === PAIRS) {
-        this.score = computeScore(this.moves);
+      if (this.found === this.pairs) {
+        this.score = computeScore(this.moves, this.pairs);
         this.gameOver(true);
       }
     } else {
@@ -135,10 +183,10 @@ export class MemoryGame extends BaseGame {
 
   overlayContent() {
     const c = super.overlayContent();
-    if (this.state === 'ready') c.lines = [{ text: `${PAIRS} çifti en az hamlede bul`, color: NEON.dim }];
+    if (this.state === 'ready') c.lines.unshift({ text: t('memory.readyLine', { n: this.pairs }), color: NEON.dim });
     if (this.state === 'won') {
-      c.title = 'TÜM ÇİFTLER!';
-      c.lines.unshift({ text: `${this.moves} hamle · ${Math.floor(this.elapsed)} sn`, color: NEON.dim });
+      c.title = t('memory.won');
+      c.lines.unshift({ text: t('memory.wonLine', { moves: this.moves, sec: Math.floor(this.elapsed) }), color: NEON.dim });
     }
     return c;
   }
@@ -209,9 +257,11 @@ export class MemoryGame extends BaseGame {
 
   draw() {
     const ctx = this.ctx;
+    const { card: CARD, gx, gy, cols } = this;
+    const radius = Math.min(14, CARD * 0.11);
     this.cards.forEach((card, i) => {
-      const x = GX + (i % COLS) * (CARD + GAP);
-      const y = GY + Math.floor(i / COLS) * (CARD + GAP);
+      const x = gx + (i % cols) * (CARD + GAP);
+      const y = gy + Math.floor(i / cols) * (CARD + GAP);
       const scaleX = Math.abs(Math.cos(card.flip * Math.PI));
       const faceUp = card.flip > 0.5;
       const cx = x + CARD / 2;
@@ -219,15 +269,16 @@ export class MemoryGame extends BaseGame {
       ctx.translate(cx, y + CARD / 2);
       ctx.scale(Math.max(0.02, scaleX), 1);
       ctx.translate(-cx, -(y + CARD / 2));
-      roundRect(ctx, x, y, CARD, CARD, 14);
+      roundRect(ctx, x, y, CARD, CARD, radius);
       if (faceUp) {
         ctx.fillStyle = '#0e0e22';
         ctx.fill();
-        const color = COLORS[card.face];
+        const face = faceOf(card.face);
+        const color = COLORS[face.color];
         ctx.strokeStyle = card.matched ? color : 'rgba(236, 235, 255, 0.35)';
         ctx.lineWidth = card.matched ? 3 : 2;
         ctx.stroke();
-        this.drawShape(SHAPES[card.face], cx, y + CARD / 2, CARD * 0.5, color);
+        this.drawShape(SHAPES[face.shape], cx, y + CARD / 2, CARD * 0.5, color);
       } else {
         ctx.fillStyle = '#1b1240';
         ctx.fill();
@@ -242,11 +293,11 @@ export class MemoryGame extends BaseGame {
         }
         ctx.stroke();
         ctx.restore();
-        roundRect(ctx, x, y, CARD, CARD, 14);
+        roundRect(ctx, x, y, CARD, CARD, radius);
         ctx.strokeStyle = NEON.purple;
         ctx.lineWidth = 2;
         ctx.stroke();
-        this.text('?', cx, y + CARD / 2 + 2, { size: 44, color: 'rgba(178, 107, 255, 0.8)' });
+        this.text('?', cx, y + CARD / 2 + 2, { size: Math.round(CARD / 3), color: 'rgba(178, 107, 255, 0.8)' });
       }
       ctx.restore();
 
@@ -257,7 +308,7 @@ export class MemoryGame extends BaseGame {
         ctx.shadowColor = NEON.green;
         ctx.shadowBlur = 20;
         ctx.lineWidth = 4;
-        roundRect(ctx, x - 3, y - 3, CARD + 6, CARD + 6, 16);
+        roundRect(ctx, x - 3, y - 3, CARD + 6, CARD + 6, radius + 2);
         ctx.stroke();
         ctx.restore();
       }
@@ -266,13 +317,13 @@ export class MemoryGame extends BaseGame {
         ctx.strokeStyle = NEON.cyan;
         ctx.lineWidth = 3;
         ctx.setLineDash([7, 5]);
-        roundRect(ctx, x - 5, y - 5, CARD + 10, CARD + 10, 16);
+        roundRect(ctx, x - 5, y - 5, CARD + 10, CARD + 10, radius + 2);
         ctx.stroke();
         ctx.restore();
       }
     });
 
-    this.text(`EŞLEŞEN ${this.found}/${PAIRS}`, W / 2, H - 18, { size: 14, color: NEON.dim });
-    this.drawHUD(`HAMLE ${this.moves} · ${Math.floor(this.elapsed)} sn`);
+    this.text(t('memory.found', { found: this.found, total: this.pairs }), W / 2, H - 18, { size: 14, color: NEON.dim });
+    this.drawHUD(t('memory.hud', { moves: this.moves, sec: Math.floor(this.elapsed) }));
   }
 }

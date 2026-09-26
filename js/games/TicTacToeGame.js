@@ -1,4 +1,5 @@
 import { BaseGame, NEON } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 const W = 450;
 const H = 500;
@@ -84,12 +85,13 @@ export function aiMove(board, ai, difficulty = 'hard', rng = Math.random) {
 export class TicTacToeGame extends BaseGame {
   static meta = {
     id: 'tictactoe',
-    title: 'Tic-Tac-Toe',
+    get title() { return t('tictactoe.title'); },
     width: W,
     height: H,
     hasScore: false,
-    controls: 'Tıkla / dokun ya da oklar + Enter ile işaret koy · 1/2: oyuncu sayısı · K/Z: kolay/zor',
-    description: 'Üç taşını yan yana diz. Tek oyunculu modda X sensin; zor seviyedeki bilgisayar yenilmez.',
+    theme: ['#ff66ff', NEON.cyan],
+    get controls() { return t('tictactoe.controls'); },
+    get description() { return t('tictactoe.description'); },
   };
 
   constructor(engine) {
@@ -100,10 +102,10 @@ export class TicTacToeGame extends BaseGame {
     this.difficulty = this.storage.get('ttt:difficulty', 'hard') === 'easy' ? 'easy' : 'hard';
     this.tally = sessionTally;
     this.menuButtons = [
-      { label: '1 Oyuncu', key: 'Digit1', group: 0, selected: () => this.mode === 1, onClick: () => this.setOption('mode', 1) },
-      { label: '2 Oyuncu', key: 'Digit2', group: 0, selected: () => this.mode === 2, onClick: () => this.setOption('mode', 2) },
-      { label: 'Kolay', key: 'KeyK', group: 1, color: NEON.green, selected: () => this.difficulty === 'easy', onClick: () => this.setOption('difficulty', 'easy') },
-      { label: 'Zor', key: 'KeyZ', group: 1, color: NEON.pink, selected: () => this.difficulty === 'hard', onClick: () => this.setOption('difficulty', 'hard') },
+      { get label() { return t('mode.1p'); }, key: 'Digit1', group: 0, selected: () => this.mode === 1, onClick: () => this.setOption('mode', 1) },
+      { get label() { return t('mode.2p'); }, key: 'Digit2', group: 0, selected: () => this.mode === 2, onClick: () => this.setOption('mode', 2) },
+      { get label() { return t('common.easy'); }, key: 'KeyK', group: 1, color: NEON.green, selected: () => this.difficulty === 'easy', onClick: () => this.setOption('difficulty', 'easy') },
+      { get label() { return t('common.hard'); }, key: 'KeyZ', group: 1, color: NEON.pink, selected: () => this.difficulty === 'hard', onClick: () => this.setOption('difficulty', 'hard') },
     ];
   }
 
@@ -192,19 +194,19 @@ export class TicTacToeGame extends BaseGame {
   overlayContent() {
     const c = super.overlayContent();
     if (this.state === 'ready') {
-      c.lines = [{ text: 'Mod ve zorluk seç', color: NEON.dim }];
+      c.lines = [{ text: t('tictactoe.ready'), color: NEON.dim }];
       return c;
     }
     const r = this.result;
     if (!r || r.draw) {
-      c.title = 'BERABERE';
+      c.title = t('ov.draw');
       c.color = NEON.yellow;
     } else if (this.mode === 1) {
-      c.title = r.player === 'X' ? 'KAZANDIN!' : 'KAYBETTİN';
+      c.title = r.player === 'X' ? t('ov.won') : t('ov.lost');
     } else {
-      c.title = `${r.player} KAZANDI!`;
+      c.title = t('tictactoe.wins', { p: r.player });
     }
-    c.lines = [{ text: `X ${this.tally.X}  ·  Berabere ${this.tally.draw}  ·  O ${this.tally.O}`, color: NEON.text }];
+    c.lines = [{ text: `X ${this.tally.X}  ·  ${t('common.drawsCount', { n: this.tally.draw })}  ·  O ${this.tally.O}`, color: NEON.text }];
     return c;
   }
 
@@ -251,7 +253,7 @@ export class TicTacToeGame extends BaseGame {
     const ctx = this.ctx;
     // Üst bilgi
     this.text(`X  ${this.tally.X}`, 24, 26, { size: 18, align: 'left', color: NEON.pink });
-    this.text(`BERABERE ${this.tally.draw}`, W / 2, 26, { size: 14, color: NEON.dim });
+    this.text(t('common.DRAWS', { n: this.tally.draw }), W / 2, 26, { size: 14, color: NEON.dim, maxWidth: W / 3 });
     this.text(`${this.tally.O}  O`, W - 24, 26, { size: 18, align: 'right', color: NEON.cyan });
 
     // Izgara
@@ -331,10 +333,10 @@ export class TicTacToeGame extends BaseGame {
     // Alt durum satırı
     let status;
     if (this.state === 'playing') {
-      status = this.aiTurn ? 'Bilgisayar düşünüyor…' : this.mode === 1 ? 'Sıra sende (X)' : `Sıra: ${this.turn}`;
+      status = this.aiTurn ? t('common.aiThinking') : this.mode === 1 ? t('tictactoe.yourTurnX') : t('common.turnOf', { who: this.turn });
     } else {
-      status = this.mode === 1 ? `1 Oyuncu · ${this.difficulty === 'easy' ? 'Kolay' : 'Zor'}` : '2 Oyuncu';
+      status = this.mode === 1 ? `${t('mode.1p')} · ${t(this.difficulty === 'easy' ? 'common.easy' : 'common.hard')}` : t('mode.2p');
     }
-    this.text(status, W / 2, H - 22, { size: 16, color: this.turn === 'X' ? NEON.pink : NEON.cyan });
+    this.text(status, W / 2, H - 22, { size: 16, color: this.turn === 'X' ? NEON.pink : NEON.cyan, maxWidth: W - 24 });
   }
 }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Arcade Hub</title>
-  <meta name="description" content="Sunucusuz, bağımlılıksız HTML5 retro arcade oyun kütüphanesi.">
+  <meta name="description" content="Sunucusuz, bağımlılıksız HTML5 retro arcade oyun kütüphanesi." data-i18n-content="ui.metaDescription">
   <meta name="theme-color" content="#07070d">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2307070d'/%3E%3Cpath d='M3 11h10M5 5h2v2H5zM9 5h2v2H9z' stroke='%2322e4ff' stroke-width='1.5' fill='%23ff2e88'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./css/style.css">
@@ -12,25 +12,55 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="logo" href="#" aria-label="Arcade Hub ana oyun">ARCADE<span>HUB</span></a>
+    <a class="logo" href="#" aria-label="Arcade Hub ana oyun" data-i18n-aria="ui.home">ARCADE<span>HUB</span></a>
     <div class="toolbar">
-      <button id="pause-btn" class="tool-btn" type="button">⏸ Duraklat</button>
-      <button id="mute-btn" class="tool-btn" type="button" aria-pressed="false">🔊 Ses açık</button>
+      <button id="settings-btn" class="tool-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings">
+        <span class="ico" aria-hidden="true">⚙</span><span class="lbl" data-i18n="ui.settings">Ayarlar</span>
+      </button>
+      <button id="pause-btn" class="tool-btn" type="button">
+        <span class="ico" aria-hidden="true">⏸</span><span class="lbl">Duraklat</span>
+      </button>
+      <button id="mute-btn" class="tool-btn" type="button" aria-pressed="false">
+        <span class="ico" aria-hidden="true">🔊</span><span class="lbl">Ses açık</span>
+      </button>
+      <label class="tool-btn lang-pick">
+        <span class="ico" aria-hidden="true">🌐</span>
+        <span class="sr-only" data-i18n="ui.language">Dil</span>
+        <select id="lang-select"></select>
+      </label>
     </div>
   </header>
 
-  <nav id="game-menu" class="menu" aria-label="Oyunlar"></nav>
+  <nav id="game-menu" class="menu" aria-label="Oyunlar" data-i18n-aria="ui.gamesNav"></nav>
 
   <main class="stage">
     <h1 id="game-title" class="game-title">Arcade Hub</h1>
     <div class="canvas-wrap">
-      <canvas id="game-canvas" width="600" height="600" aria-label="Oyun alanı"></canvas>
+      <canvas id="game-canvas" width="600" height="600" aria-label="Oyun alanı" data-i18n-aria="ui.canvas"></canvas>
     </div>
     <p id="game-description" class="game-description"></p>
-    <p class="game-controls"><span class="kbd-label">Kontroller</span> <span id="game-controls"></span></p>
-    <noscript><p class="notice">Arcade Hub çalışmak için JavaScript gerektirir.</p></noscript>
+    <p class="game-controls"><span class="kbd-label" data-i18n="ui.controls">Kontroller</span> <span id="game-controls"></span></p>
+    <noscript><p class="notice">Arcade Hub çalışmak için JavaScript gerektirir. · Arcade Hub needs JavaScript.</p></noscript>
   </main>
 
-  <footer class="footer">P / Esc: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar bu tarayıcıda saklanır</footer>
+  <footer class="footer" data-i18n="ui.footer">P / Esc: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar ve ayarlar bu tarayıcıda saklanır</footer>
+
+  <!-- Oyun ayarları paneli: içerik, oyunun `static settings` şemasından app.js tarafından üretilir. -->
+  <div id="settings" class="settings" aria-hidden="true">
+    <div class="settings-backdrop" data-close></div>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header class="settings-head">
+        <h2 id="settings-title" class="settings-title"></h2>
+        <button class="tool-btn" type="button" data-close>
+          <span class="ico" aria-hidden="true">✕</span><span class="lbl" data-i18n="ui.close">Kapat</span>
+        </button>
+      </header>
+      <div id="settings-body" class="settings-body"></div>
+      <footer class="settings-foot">
+        <p class="settings-note" data-i18n="ui.restartNote"></p>
+        <button id="settings-reset" class="tool-btn" type="button" data-i18n="ui.resetDefaults">Varsayılanlar</button>
+      </footer>
+    </section>
+  </div>
 </body>
 </html>

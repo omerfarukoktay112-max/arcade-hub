@@ -1,9 +1,10 @@
 import { BaseGame, NEON, roundRect, pointInRect, shuffle } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 export const DIFFICULTIES = {
-  easy: { label: 'Kolay', rows: 9, cols: 9, mines: 10, cell: 36 },
-  medium: { label: 'Orta', rows: 16, cols: 16, mines: 40, cell: 30 },
-  hard: { label: 'Zor', rows: 16, cols: 30, mines: 99, cell: 26 },
+  easy: { labelKey: 'common.easy', rows: 9, cols: 9, mines: 10, cell: 36 },
+  medium: { labelKey: 'common.medium', rows: 16, cols: 16, mines: 40, cell: 30 },
+  hard: { labelKey: 'common.hard', rows: 16, cols: 30, mines: 99, cell: 26 },
 };
 const ORDER = ['easy', 'medium', 'hard'];
 const TOP = 84;
@@ -139,12 +140,13 @@ const NUM_COLORS = [null, NEON.cyan, NEON.green, NEON.pink, NEON.purple, NEON.or
 export class MinesweeperGame extends BaseGame {
   static meta = {
     id: 'minesweeper',
-    title: 'Minesweeper',
+    get title() { return t('minesweeper.title'); },
     width: sizeFor(DIFFICULTIES.easy).width,
     height: sizeFor(DIFFICULTIES.easy).height,
-    controls: 'Sol tık / dokun: aç · Sağ tık / uzun bas: bayrak · Açık sayıya tık: çevresini aç · 1/2/3: zorluk',
-    description: 'Mayınlara basmadan tüm güvenli hücreleri aç. İlk tıklama her zaman güvenlidir; en iyi süren saklanır.',
-    scoreLabel: 'SÜRE',
+    get controls() { return t('minesweeper.controls'); },
+    get description() { return t('minesweeper.description'); },
+    get scoreLabel() { return t('minesweeper.time'); },
+    theme: [NEON.red, NEON.cyan],
     lowerIsBetter: true,
     recordOnWin: true,
   };
@@ -205,7 +207,7 @@ export class MinesweeperGame extends BaseGame {
   }
 
   formatScore(v) {
-    return `${v.toFixed(1)} sn`;
+    return t('common.seconds', { v: v.toFixed(1) });
   }
 
   get boardX() {
@@ -292,8 +294,8 @@ export class MinesweeperGame extends BaseGame {
   overlayContent() {
     const c = super.overlayContent();
     if (this.state === 'over') {
-      c.title = 'BOOM!';
-      c.lines = [{ text: 'Mayına bastın.', color: NEON.text }];
+      c.title = t('minesweeper.boom');
+      c.lines = [{ text: t('minesweeper.hitMine'), color: NEON.text }];
     }
     return c;
   }
@@ -379,7 +381,7 @@ export class MinesweeperGame extends BaseGame {
     ctx.fillStyle = NEON.panel;
     ctx.fillRect(0, 0, this.width, TOP - 8);
     for (const [i, b] of this.diffButtons.entries()) {
-      this.drawButton(b.rect, `${i + 1} ${DIFFICULTIES[b.id].label}`, { selected: b.id === this.diff, size: 14 });
+      this.drawButton(b.rect, `${i + 1} ${t(DIFFICULTIES[b.id].labelKey)}`, { selected: b.id === this.diff, size: 14 });
     }
     // Bilgi satırı
     const infoY = 61;
@@ -390,8 +392,8 @@ export class MinesweeperGame extends BaseGame {
     });
     this.drawClock(this.width - PAD - 52, infoY, 8);
     const best = this.best;
-    const centerText = this.state === 'ready' ? 'Bir hücreye tıkla' : best === null ? 'EN İYİ -' : `EN İYİ ${this.formatScore(best)}`;
-    this.text(centerText, this.width / 2, infoY + 1, { size: 13, color: this.state === 'ready' ? NEON.yellow : NEON.dim });
+    const centerText = this.state === 'ready' ? t('minesweeper.clickCell') : t('minesweeper.best', { v: best === null ? '-' : this.formatScore(best) });
+    this.text(centerText, this.width / 2, infoY + 1, { size: 13, color: this.state === 'ready' ? NEON.yellow : NEON.dim, maxWidth: this.width - 190 });
 
     // Tahta
     const fontSize = Math.floor(S * 0.58);

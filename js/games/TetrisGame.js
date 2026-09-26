@@ -1,4 +1,5 @@
 import { BaseGame, NEON, roundRect, shuffle } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 export const COLS = 10;
 export const ROWS = 20;
@@ -152,11 +153,12 @@ export function createBag(rng = Math.random) {
 export class TetrisGame extends BaseGame {
   static meta = {
     id: 'tetris',
-    title: 'Tetris',
+    get title() { return t('tetris.title'); },
     width: 480,
     height: 600,
-    controls: '←/→ kaydır · ↑ / X döndür · Z ters döndür · ↓ yavaş düşür · Space sert düşür · C tut · Mobil: dokun döndür, sürükle kaydır, aşağı kaydır düşür, yukarı kaydır tut',
-    description: 'Satırları tamamlayarak temizle. 1/2/3/4 satır: 100/300/500/800 × seviye. Her 10 satırda seviye ve hız artar.',
+    theme: [NEON.cyan, NEON.purple],
+    get controls() { return t('tetris.controls'); },
+    get description() { return t('tetris.description'); },
   };
 
   reset() {
@@ -478,18 +480,18 @@ export class TetrisGame extends BaseGame {
     const px = PANEL_X + 14;
     const pw = this.width - PANEL_X - 28;
     const stat = (label, value, y, color) => {
-      this.text(label, px, y, { size: 12, align: 'left', color: NEON.dim });
+      this.text(label, px, y, { size: 12, align: 'left', color: NEON.dim, maxWidth: pw });
       this.text(String(value), px, y + 22, { size: 22, align: 'left', color });
     };
-    stat('SKOR', this.score, 22, NEON.cyan);
+    stat(t('hud.score'), this.score, 22, NEON.cyan);
     const best = this.best;
-    stat('REKOR', best === null ? '-' : best, 78, NEON.pink);
-    stat('SEVİYE', this.level, 134, NEON.yellow);
-    stat('SATIR', this.lines, 190, NEON.green);
+    stat(t('hud.best'), best === null ? '-' : best, 78, NEON.pink);
+    stat(t('common.LEVEL'), this.level, 134, NEON.yellow);
+    stat(t('tetris.lines'), this.lines, 190, NEON.green);
 
-    this.drawBox('SONRAKİ', px, 240, pw, 200);
+    this.drawBox(t('tetris.next'), px, 240, pw, 200);
     this.queue.slice(0, 3).forEach((t, i) => this.drawMini(t, px + pw / 2, 290 + i * 54, i === 0 ? 18 : 14));
-    this.drawBox('TUT (C)', px, 456, pw, 100);
+    this.drawBox(t('tetris.hold'), px, 456, pw, 100);
     ctx.save();
     if (this.holdUsed) ctx.globalAlpha = 0.35;
     this.drawMini(this.hold, px + pw / 2, 514, 18);

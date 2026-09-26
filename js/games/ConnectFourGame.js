@@ -1,4 +1,5 @@
 import { BaseGame, NEON, roundRect } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 export const ROWS = 6;
 export const COLS = 7;
@@ -130,12 +131,13 @@ export function bestMove(board, ai, depth = AI_DEPTH) {
 export class ConnectFourGame extends BaseGame {
   static meta = {
     id: 'connect4',
-    title: 'Connect Four',
+    get title() { return t('connect4.title'); },
     width: W,
     height: H,
     hasScore: false,
-    controls: 'Fare / dokunma ile sütun seç ve bırak · ←/→ + Enter / Space · 1/2: oyuncu sayısı',
-    description: 'Dört taşını yatay, dikey ya da çapraz sırala. Tek oyunculu modda alfa-beta minimax kullanan bilgisayara karşı oynarsın.',
+    theme: [NEON.blue, NEON.yellow],
+    get controls() { return t('connect4.controls'); },
+    get description() { return t('connect4.description'); },
   };
 
   constructor(engine) {
@@ -145,8 +147,8 @@ export class ConnectFourGame extends BaseGame {
     this.mode = this.storage.get('connect4:mode', 1) === 2 ? 2 : 1;
     this.tally = sessionTally;
     this.menuButtons = [
-      { label: '1 Oyuncu', key: 'Digit1', selected: () => this.mode === 1, onClick: () => this.setMode(1) },
-      { label: '2 Oyuncu', key: 'Digit2', selected: () => this.mode === 2, onClick: () => this.setMode(2) },
+      { get label() { return t('mode.1p'); }, key: 'Digit1', selected: () => this.mode === 1, onClick: () => this.setMode(1) },
+      { get label() { return t('mode.2p'); }, key: 'Digit2', selected: () => this.mode === 2, onClick: () => this.setMode(2) },
     ];
   }
 
@@ -245,20 +247,26 @@ export class ConnectFourGame extends BaseGame {
   overlayContent() {
     const c = super.overlayContent();
     if (this.state === 'ready') {
-      c.lines = [{ text: 'Dört taşı sıraya diz', color: NEON.dim }];
+      c.lines = [{ text: t('connect4.ready'), color: NEON.dim }];
       return c;
     }
     if (this.draw_) {
-      c.title = 'BERABERE';
+      c.title = t('ov.draw');
       c.color = NEON.yellow;
     } else if (this.mode === 1) {
-      c.title = this.win.player === 1 ? 'KAZANDIN!' : 'KAYBETTİN';
+      c.title = this.win.player === 1 ? t('ov.won') : t('ov.lost');
+      if (this.win.player === 2) c.color = NEON.yellow;
     } else {
-      c.title = `OYUNCU ${this.win.player} KAZANDI`;
+      c.title = t('common.playerWins', { n: this.win.player });
       c.color = COLORS[this.win.player];
     }
-    const name2 = this.mode === 1 ? 'Bilgisayar' : 'Oyuncu 2';
-    c.lines = [{ text: `Oyuncu 1: ${this.tally[1]}  ·  ${name2}: ${this.tally[2]}  ·  Berabere: ${this.tally.draw}`, color: NEON.text }];
+    // Skor tablosu iki kısa satıra bölünür: uzun tek satır dar panelden taşıyordu.
+    // (BaseGame ayrıca her satırı panel genişliğine sığdırır / gerekirse böler.)
+    const name2 = this.mode === 1 ? t('common.computer') : t('common.player', { n: 2 });
+    c.lines = [
+      { text: `${t('common.player', { n: 1 })}  ${this.tally[1]} – ${this.tally[2]}  ${name2}`, color: NEON.text },
+      { text: t('common.drawsCount', { n: this.tally.draw }), color: NEON.dim, size: 16 },
+    ];
     return c;
   }
 
@@ -285,12 +293,13 @@ export class ConnectFourGame extends BaseGame {
   draw() {
     const ctx = this.ctx;
     // Üst bilgi
-    const name2 = this.mode === 1 ? 'BİLGİSAYAR' : 'OYUNCU 2';
-    this.text(`OYUNCU 1  ${this.tally[1]}`, 20, 22, { size: 15, align: 'left', color: NEON.pink });
-    this.text(`${this.tally[2]}  ${name2}`, W - 20, 22, { size: 15, align: 'right', color: NEON.yellow });
-    let status = `BERABERE ${this.tally.draw}`;
-    if (this.state === 'playing') status = this.aiTurn ? 'Bilgisayar düşünüyor…' : this.mode === 1 ? 'Sıra sende' : `Sıra: Oyuncu ${this.turn}`;
-    this.text(status, W / 2, 22, { size: 14, color: this.state === 'playing' ? COLORS[this.turn] : NEON.dim });
+    const name2 = this.mode === 1 ? t('common.COMPUTER') : t('common.PLAYER', { n: 2 });
+    const side = W / 3 - 24;
+    this.text(`${t('common.PLAYER', { n: 1 })}  ${this.tally[1]}`, 20, 22, { size: 15, align: 'left', color: NEON.pink, maxWidth: side });
+    this.text(`${this.tally[2]}  ${name2}`, W - 20, 22, { size: 15, align: 'right', color: NEON.yellow, maxWidth: side });
+    let status = t('common.DRAWS', { n: this.tally.draw });
+    if (this.state === 'playing') status = this.aiTurn ? t('common.aiThinking') : this.mode === 1 ? t('common.yourTurn') : t('common.turnOf', { who: t('common.player', { n: this.turn }) });
+    this.text(status, W / 2, 22, { size: 14, color: this.state === 'playing' ? COLORS[this.turn] : NEON.dim, maxWidth: side + 20 });
 
     // Önizleme
     if (this.state === 'playing' && !this.falling && !this.aiTurn) {

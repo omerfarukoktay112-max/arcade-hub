@@ -111,6 +111,44 @@ for (const name of imported) {
 }
 console.log(`  ${imported.length} oyun: ${[...ids].join(', ')}`);
 
+console.log('Çoklu dil (i18n) anahtarları');
+{
+  const { LANGS } = await import(new URL('../js/core/I18n.js', import.meta.url));
+  const [base, ...others] = LANGS;
+  const baseKeys = Object.keys(base.dict);
+  for (const lang of others) {
+    const keys = Object.keys(lang.dict);
+    for (const k of baseKeys) if (!keys.includes(k)) fail(`i18n: "${k}" ${lang.code} sözlüğünde yok`);
+    for (const k of keys) if (!baseKeys.includes(k)) fail(`i18n: "${k}" yalnızca ${lang.code} sözlüğünde var`);
+  }
+  const has = (k) => LANGS.every((l) => l.dict[k] !== undefined);
+  // Koddaki sabit anahtarlar: t('...')
+  let used = 0;
+  for (const f of jsFiles.filter((p) => p.includes(join(ROOT, 'js')))) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/\bt\('([^']+)'/g)) {
+      used++;
+      if (!has(m[1])) fail(`${relative(ROOT, f)}: i18n anahtarı "${m[1]}" sözlükte yok`);
+    }
+  }
+  // HTML'deki data-i18n* anahtarları
+  for (const m of html.matchAll(/data-i18n(?:-aria|-content)?="([^"]+)"/g)) {
+    if (!has(m[1])) fail(`index.html: i18n anahtarı "${m[1]}" sözlükte yok`);
+  }
+  // Oyun ayar şemaları (dinamik üretilen etiketler dahil)
+  for (const name of imported) {
+    const Game = (await import(new URL(`../js/games/${name}.js`, import.meta.url)))[name];
+    for (const def of Game.settings || []) {
+      if (!has(def.labelKey)) fail(`${name}.settings.${def.id}: labelKey "${def.labelKey}" sözlükte yok`);
+      if (!def.options?.length || !def.options.some((o) => o.value === def.default)) fail(`${name}.settings.${def.id}: varsayılan seçeneklerde yok`);
+      for (const o of def.options || []) {
+        if (o.labelKey && !has(o.labelKey)) fail(`${name}.settings.${def.id}: "${o.labelKey}" sözlükte yok`);
+        if (!o.labelKey && o.label === undefined) fail(`${name}.settings.${def.id}: etiketsiz seçenek ${o.value}`);
+      }
+    }
+  }
+  console.log(`  ${LANGS.map((l) => l.code).join(', ')} · ${baseKeys.length} anahtar · kodda ${used} kullanım`);
+}
+
 if (failures) {
   console.error(`\n${failures} hata`);
   process.exit(1);

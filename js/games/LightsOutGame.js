@@ -1,4 +1,5 @@
 import { BaseGame, NEON, HUD_HEIGHT, roundRect, pointInRect } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 export const N = 5;
 const W = 500;
@@ -11,8 +12,8 @@ export const MAX_LEVEL = 10;
 const LEVEL_PAUSE = 0.9;
 // Dokunmatik cihazlar için R / H kısayollarının düğme karşılıkları
 const TOOLS = [
-  { id: 'reset', label: '↺ SIFIRLA', rect: { x: 24, y: H - 36, w: 150, h: 30 } },
-  { id: 'hint', label: '? İPUCU', rect: { x: 184, y: H - 36, w: 130, h: 30 } },
+  { id: 'reset', labelKey: 'lightsout.reset', rect: { x: 24, y: H - 36, w: 150, h: 30 } },
+  { id: 'hint', labelKey: 'lightsout.hint', rect: { x: 184, y: H - 36, w: 130, h: 30 } },
 ];
 
 /* ---------------- Saf mantık ---------------- */
@@ -112,11 +113,12 @@ export function solve(grid) {
 export class LightsOutGame extends BaseGame {
   static meta = {
     id: 'lightsout',
-    title: 'Lights Out',
+    get title() { return t('lightsout.title'); },
     width: W,
     height: H,
-    controls: 'Tıkla / dokun ya da oklar + Enter: ışığı ve komşularını çevir · R: seviyeyi sıfırla · H: ipucu',
-    description: 'Tüm ışıkları söndür. Her tıklama hücreyi ve dört komşusunu çevirir; bulmacalar her zaman çözülebilirdir. 10 seviye.',
+    theme: ['#00ffd0', NEON.yellow],
+    get controls() { return t('lightsout.controls'); },
+    get description() { return t('lightsout.description'); },
   };
 
   reset() {
@@ -225,8 +227,8 @@ export class LightsOutGame extends BaseGame {
 
   overlayContent() {
     const c = super.overlayContent();
-    if (this.state === 'ready') c.lines = [{ text: `${MAX_LEVEL} seviye · tüm ışıkları söndür`, color: NEON.dim }];
-    if (this.state === 'won') c.title = 'TÜM SEVİYELER TAMAM!';
+    if (this.state === 'ready') c.lines = [{ text: t('lightsout.ready', { n: MAX_LEVEL }), color: NEON.dim }];
+    if (this.state === 'won') c.title = t('lightsout.allDone');
     return c;
   }
 
@@ -276,12 +278,12 @@ export class LightsOutGame extends BaseGame {
     }
 
     if (this.cleared > 0) {
-      this.text(this.level >= MAX_LEVEL ? 'SON SEVİYE TAMAM!' : `SEVİYE ${this.level} TAMAM!`, W / 2, GY + (CELL * N + GAP * (N - 1)) / 2, {
-        size: 34, color: NEON.green, glow: 18,
+      this.text(this.level >= MAX_LEVEL ? t('lightsout.lastDone') : t('lightsout.levelDone', { n: this.level }), W / 2, GY + (CELL * N + GAP * (N - 1)) / 2, {
+        size: 34, color: NEON.green, glow: 18, maxWidth: W - 40,
       });
     }
-    for (const t of TOOLS) this.drawButton(t.rect, t.label, { size: 13, color: t.id === 'hint' ? NEON.green : NEON.cyan });
-    this.text(`HEDEF ${this.par} HAMLE`, W - 24, H - 20, { size: 14, align: 'right', color: NEON.dim });
-    this.drawHUD(`SEVİYE ${this.level}/${MAX_LEVEL} · HAMLE ${this.moves}`);
+    for (const tool of TOOLS) this.drawButton(tool.rect, t(tool.labelKey), { size: 13, color: tool.id === 'hint' ? NEON.green : NEON.cyan });
+    this.text(t('lightsout.par', { n: this.par }), W - 24, H - 20, { size: 14, align: 'right', color: NEON.dim, maxWidth: W - 340 });
+    this.drawHUD(t('lightsout.hud', { level: this.level, max: MAX_LEVEL, moves: this.moves }));
   }
 }

@@ -1,4 +1,5 @@
 import { BaseGame, NEON, HUD_HEIGHT, clamp } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 const W = 400;
 const H = 600;
@@ -56,17 +57,44 @@ export function hitsPipe(birdY, pipe, r = BIRD_R * 0.85) {
   );
 }
 
+/* ---------------- Görünüm ---------------- */
+
+/** Kuş renk paletleri: gövde, kanat, gaga. 'rainbow' gövde tonunu zamanla döndürür. */
+export const BIRD_COLORS = {
+  yellow: { body: NEON.yellow, wing: NEON.orange, beak: NEON.pink },
+  red: { body: NEON.red, wing: '#ffa0aa', beak: NEON.yellow },
+  ice: { body: NEON.cyan, wing: NEON.blue, beak: NEON.yellow },
+  lime: { body: NEON.green, wing: '#16a35a', beak: NEON.orange },
+  purple: { body: NEON.purple, wing: NEON.pink, beak: NEON.yellow },
+  ghost: { body: '#e8e8ff', wing: '#9d9dd0', beak: NEON.pink, alpha: 0.7 },
+  rainbow: { body: 'rainbow', wing: '#ffffff', beak: NEON.yellow },
+};
+/** Aksesuarlar (skin): kuşla birlikte döner. */
+export const BIRD_SKINS = ['classic', 'crown', 'shades', 'ninja', 'tophat', 'robot'];
+
 /* ---------------- Oyun ---------------- */
 
 export class FlappyGame extends BaseGame {
   static meta = {
     id: 'flappy',
-    title: 'Flappy Bird',
+    get title() { return t('flappy.title'); },
     width: W,
     height: H,
-    controls: 'Space / ↑ / tıkla / dokun: zıpla',
-    description: 'Boruların arasındaki boşluklardan geç. Her boru +1 puan; zemine ya da boruya çarpma.',
+    theme: [NEON.yellow, NEON.green],
+    get controls() { return t('flappy.controls'); },
+    get description() { return t('flappy.description'); },
   };
+
+  static settings = [
+    {
+      id: 'color', labelKey: 'set.birdColor', type: 'color', live: true, default: 'yellow',
+      options: Object.entries(BIRD_COLORS).map(([value, c]) => ({ value, labelKey: `color.${value}`, color: c.body })),
+    },
+    {
+      id: 'skin', labelKey: 'set.birdSkin', live: true, default: 'classic',
+      options: BIRD_SKINS.map((value) => ({ value, labelKey: `flappy.skin.${value}` })),
+    },
+  ];
 
   constructor(engine) {
     super(engine);
@@ -215,22 +243,38 @@ export class FlappyGame extends BaseGame {
     }
   }
 
-  drawBird() {
+  /** Hazır ekranında panel kuşu örttüğü için seçili görünüm panelin üstünde büyütülmüş önizlenir. */
+  drawOverlay() {
+    super.drawOverlay();
+    if (this.state !== 'ready') return;
+    const layout = this.overlayLayout();
+    if (!layout) return;
     const ctx = this.ctx;
-    const b = this.bird;
     ctx.save();
-    ctx.translate(BIRD_X, b.y);
-    ctx.rotate(b.rot);
-    ctx.shadowColor = NEON.yellow;
+    ctx.globalAlpha = this.overlayProgress();
+    this.drawBird(W / 2, Math.max(CEILING_Y + 40, layout.panel.y - 42) + Math.sin(this.time * 3) * 5, 0, 1.6);
+    ctx.restore();
+  }
+
+  drawBird(x = BIRD_X, y = this.bird.y, rot = this.bird.rot, scale = 1) {
+    const ctx = this.ctx;
+    const palette = BIRD_COLORS[this.settings.color] || BIRD_COLORS.yellow;
+    const body = palette.body === 'rainbow' ? `hsl(${(this.time * 120) % 360}, 100%, 62%)` : palette.body;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.scale(scale, scale);
+    if (palette.alpha) ctx.globalAlpha *= palette.alpha;
+    ctx.shadowColor = body;
     ctx.shadowBlur = 16;
-    ctx.fillStyle = NEON.yellow;
+    ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(0, 0, BIRD_R, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
     // Kanat
     const flapPhase = this.state === 'over' ? 0 : Math.sin(this.time * 22);
-    ctx.fillStyle = NEON.orange;
+    ctx.fillStyle = palette.wing;
     ctx.beginPath();
     ctx.ellipse(-4, 3, 8, 4 + flapPhase * 3, -0.3, 0, Math.PI * 2);
     ctx.fill();
@@ -244,13 +288,99 @@ export class FlappyGame extends BaseGame {
     ctx.arc(7.5, -5, 2.2, 0, Math.PI * 2);
     ctx.fill();
     // Gaga
-    ctx.fillStyle = NEON.pink;
+    ctx.fillStyle = palette.beak;
     ctx.beginPath();
     ctx.moveTo(11, 0);
     ctx.lineTo(21, 3);
     ctx.lineTo(11, 7);
     ctx.closePath();
     ctx.fill();
+    this.drawAccessory(this.settings.skin);
     ctx.restore();
+  }
+
+  /** Aksesuar, kuşun yerel koordinatlarında (merkez 0,0; yarıçap BIRD_R) çizilir. */
+  drawAccessory(skin) {
+    const ctx = this.ctx;
+    const flutter = this.state === 'over' ? 0 : Math.sin(this.time * 18) * 2;
+    switch (skin) {
+      case 'crown':
+        ctx.fillStyle = NEON.yellow;
+        ctx.shadowColor = NEON.yellow;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(-9, -11);
+        ctx.lineTo(-10, -23);
+        ctx.lineTo(-4, -16);
+        ctx.lineTo(0, -25);
+        ctx.lineTo(4, -16);
+        ctx.lineTo(10, -23);
+        ctx.lineTo(9, -11);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = NEON.pink;
+        ctx.beginPath();
+        ctx.arc(0, -14, 2, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case 'shades':
+        ctx.fillStyle = '#05050a';
+        ctx.fillRect(0, -10, 15, 8);
+        ctx.fillRect(-6, -8, 7, 2);
+        ctx.fillStyle = 'rgba(34, 228, 255, 0.8)';
+        ctx.fillRect(3, -9, 5, 2);
+        break;
+      case 'ninja':
+        ctx.fillStyle = NEON.red;
+        ctx.fillRect(-13, -11, 26, 5);
+        ctx.beginPath();
+        ctx.moveTo(-12, -10);
+        ctx.lineTo(-25, -15 + flutter);
+        ctx.lineTo(-23, -9 + flutter);
+        ctx.closePath();
+        ctx.moveTo(-12, -8);
+        ctx.lineTo(-24, -4 - flutter);
+        ctx.lineTo(-20, -1 - flutter);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case 'tophat':
+        ctx.fillStyle = '#16162c';
+        ctx.strokeStyle = NEON.purple;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(-7, -31, 14, 17);
+        ctx.strokeRect(-7, -31, 14, 17);
+        ctx.fillRect(-12, -15, 24, 4);
+        ctx.strokeRect(-12, -15, 24, 4);
+        ctx.fillStyle = NEON.pink;
+        ctx.fillRect(-7, -19, 14, 3);
+        break;
+      case 'robot': {
+        ctx.strokeStyle = '#c8cbe0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-2, -13);
+        ctx.lineTo(-5, -24);
+        ctx.stroke();
+        const on = Math.sin(this.time * 6) > 0;
+        ctx.fillStyle = on ? NEON.red : '#5a1a22';
+        ctx.shadowColor = NEON.red;
+        ctx.shadowBlur = on ? 10 : 0;
+        ctx.beginPath();
+        ctx.arc(-5, -25, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#c8cbe0';
+        for (const [x, y] of [[-9, 4], [-3, 9]]) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      default:
+        break;
+    }
   }
 }

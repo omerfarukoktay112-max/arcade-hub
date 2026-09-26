@@ -1,4 +1,5 @@
 import { BaseGame, NEON, pointInRect } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 const W = 800;
 const H = 600;
@@ -97,12 +98,13 @@ export const patternSize = (pattern) => ({
 export class LifeGame extends BaseGame {
   static meta = {
     id: 'life',
-    title: "Conway's Game of Life",
+    get title() { return t('life.title'); },
     width: W,
     height: H,
     hasScore: false,
-    controls: 'Space: oynat/duraklat · N: tek adım · C: temizle · R: rastgele · + / −: hız · 1-3: glider / pulsar / glider gun · Sürükle: çiz (sağ tık: sil) · Mobil: alt çubuktaki düğmeler',
-    description: 'Hücresel otomat: 2-3 komşulu hücre yaşar, tam 3 komşulu boş hücre doğar. Kenarlar sarmaldır (toroidal).',
+    theme: ['#9dff3d', NEON.cyan],
+    get controls() { return t('life.controls'); },
+    get description() { return t('life.description'); },
   };
 
   constructor(engine) {
@@ -224,14 +226,14 @@ export class LifeGame extends BaseGame {
         this.cells = new Uint8Array(COLS * ROWS);
         this.age = new Uint16Array(COLS * ROWS);
         this.generation = 0;
-        this.flash('Temizlendi');
+        this.flash(t('life.cleared'));
         break;
       case 'random':
         for (let i = 0; i < this.cells.length; i++) this.cells[i] = Math.random() < 0.25 ? 1 : 0;
         this.age.fill(0);
         this.syncAge();
         this.generation = 0;
-        this.flash('Rastgele dolduruldu');
+        this.flash(t('life.randomized'));
         break;
       case 'faster':
         this.setSpeed(this.speed + 1);
@@ -257,7 +259,7 @@ export class LifeGame extends BaseGame {
     const clamped = Math.max(0, Math.min(SPEEDS.length - 1, i));
     if (clamped !== this.speed) this.sound.beep(400 + clamped * 80, 0.04);
     this.speed = clamped;
-    this.flash(`Hız: ${SPEEDS[this.speed]} nesil/sn`);
+    this.flash(t('life.speedMsg', { n: SPEEDS[this.speed] }));
   }
 
   /** Deseni fare imlecine (klavye kısayolu) ya da ekran ortasına yerleştirir. */
@@ -367,18 +369,18 @@ export class LifeGame extends BaseGame {
     ctx.restore();
 
     const y = STATUS_H / 2 + 1;
-    this.text(this.running ? '▶ ÇALIŞIYOR' : '❚❚ DURDU', 12, y, { size: 13, align: 'left', color: this.running ? NEON.green : NEON.yellow });
-    this.text(`NESİL ${this.generation}`, 200, y, { size: 13, align: 'left', color: NEON.cyan });
-    this.text(`NÜFUS ${this.population}`, 360, y, { size: 13, align: 'left', color: NEON.pink });
-    this.text(`HIZ ${SPEEDS[this.speed]} nesil/sn`, W - 12, y, { size: 13, align: 'right', color: NEON.text });
+    this.text(this.running ? t('life.running') : t('life.stopped'), 12, y, { size: 13, align: 'left', color: this.running ? NEON.green : NEON.yellow, maxWidth: 180 });
+    this.text(t('life.gen', { n: this.generation }), 200, y, { size: 13, align: 'left', color: NEON.cyan, maxWidth: 150 });
+    this.text(t('life.pop', { n: this.population }), 360, y, { size: 13, align: 'left', color: NEON.pink, maxWidth: 190 });
+    this.text(t('life.speed', { n: SPEEDS[this.speed] }), W - 12, y, { size: 13, align: 'right', color: NEON.text, maxWidth: 230 });
 
     const labels = {
-      run: this.running ? '❚❚ DURDUR' : '▶ OYNAT', step: 'ADIM', random: 'RASTGELE', clear: 'TEMİZLE',
-      pattern: `+ ${['GLIDER', 'PULSAR', 'GUN'][this.nextPattern]}`, speed: `HIZ ${SPEEDS[this.speed]}`,
+      run: this.running ? t('life.btn.stop') : t('life.btn.play'), step: t('life.btn.step'), random: t('life.btn.random'), clear: t('life.btn.clear'),
+      pattern: `+ ${['GLIDER', 'PULSAR', 'GUN'][this.nextPattern]}`, speed: t('life.btn.speed', { n: SPEEDS[this.speed] }),
     };
-    for (const t of this.tools) {
-      const color = t.id === 'run' ? NEON.green : t.id === 'pattern' ? NEON.purple : NEON.cyan;
-      this.drawButton(t.rect, labels[t.id], { selected: t.id === 'run' && this.running, color, size: 16 });
+    for (const tool of this.tools) {
+      const color = tool.id === 'run' ? NEON.green : tool.id === 'pattern' ? NEON.purple : NEON.cyan;
+      this.drawButton(tool.rect, labels[tool.id], { selected: tool.id === 'run' && this.running, color, size: 16 });
     }
 
     if (this.messageT > 0) {
@@ -388,18 +390,14 @@ export class LifeGame extends BaseGame {
       ctx.restore();
     }
     if (!this.touched) {
-      const lines = [
-        'Space: başlat / durdur   ·   N: tek adım',
-        'Sürükle: hücre çiz   ·   R: rastgele   ·   C: temizle',
-        '1: glider   2: pulsar   3: glider gun   ·   + / −: hız',
-      ];
+      const lines = [t('life.help1'), t('life.help2'), t('life.help3')];
       ctx.save();
       ctx.fillStyle = 'rgba(8, 8, 20, 0.8)';
       ctx.fillRect(W / 2 - 290, H / 2 + 40, 580, 100);
       ctx.strokeStyle = 'rgba(34, 228, 255, 0.4)';
       ctx.strokeRect(W / 2 - 290 + 0.5, H / 2 + 40.5, 580, 100);
       ctx.restore();
-      lines.forEach((l, i) => this.text(l, W / 2, H / 2 + 64 + i * 26, { size: 14, color: i === 0 ? NEON.yellow : NEON.text }));
+      lines.forEach((l, i) => this.text(l, W / 2, H / 2 + 64 + i * 26, { size: 14, color: i === 0 ? NEON.yellow : NEON.text, maxWidth: 560 }));
     }
   }
 }

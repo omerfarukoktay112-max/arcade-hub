@@ -2,13 +2,16 @@
  * BaseGame — tüm oyunların temel sınıfı.
  *
  * Her oyun:
- *  - `static meta = { id, title, width, height, controls, description }` tanımlar,
+ *  - `static meta = { id, title, width, height, controls, description }` tanımlar
+ *    (metinler dil değişimine uymak için `get title()` gibi getter'lardır ve I18n'in t() fonksiyonunu çağırır),
+ *  - isteğe bağlı `static settings = [...]` ile ayar şeması bildirir (aşağıya bak),
  *  - girdiyi yalnızca `this.input`'tan okur (kendi listener'ı yoktur),
  *  - zamanlayıcı olarak setTimeout/setInterval değil, update(dt) içindeki sayaçları kullanır.
  *
  * Yaşam döngüsü: constructor(engine) → init() → [update(dt) → draw() → drawOverlay()]* → destroy()
  * Durumlar: 'ready' | 'playing' | 'over' | 'won'
  */
+import { t, locale } from './I18n.js';
 
 export const NEON = {
   bg: '#07070d',
@@ -28,10 +31,13 @@ export const NEON = {
 
 export const FONT = '"Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", "Courier New", monospace';
 export const HUD_HEIGHT = 40;
+/** Overlay'in belirme (fade + kayma) süresi. */
+export const OVERLAY_FADE = 0.22;
 
 export const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
 export const randInt = (min, max, rng = Math.random) => min + Math.floor(rng() * (max - min + 1));
 export const pointInRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+export const easeOutCubic = (k) => 1 - (1 - k) ** 3;
 
 /** Fisher–Yates karıştırma (yerinde). */
 export function shuffle(arr, rng = Math.random) {
@@ -53,6 +59,66 @@ export function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+/* ---------- Ayar şeması ---------- */
+
+/**
+ * Ayar şeması: [{ id, labelKey, type: 'choice'|'color', default, live?, options: [{ value, label?, labelKey?, params?, note?, color? }] }]
+ * `live: true` ayarlar oyunu yeniden başlatmadan uygulanır (renk, görünüm gibi);
+ * diğerleri değişince oyun hazır ekranına döner.
+ */
+export const optionLabel = (opt) => (opt.labelKey ? t(opt.labelKey, opt.params) : String(opt.label ?? opt.value));
+
+/** Kaydedilmiş değerleri şemaya göre doğrular; geçersiz/eksik olanlar varsayılana düşer (saf). */
+export function resolveSettings(schema, saved) {
+  const out = {};
+  const src = saved && typeof saved === 'object' ? saved : {};
+  for (const def of schema) {
+    const ok = def.options.some((o) => o.value === src[def.id]);
+    out[def.id] = ok ? src[def.id] : def.default;
+  }
+  return out;
+}
+
+/* ---------- Metin ölçümü ---------- */
+
+/** Metin genişliği: canvas varsa ölçer, yoksa (Node) tek aralıklı yazı tipi yaklaşımı. */
+export function measureText(ctx, str, size, weight = '700') {
+  if (ctx && ctx.measureText) {
+    ctx.save();
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    const w = ctx.measureText(str).width;
+    ctx.restore();
+    return w;
+  }
+  return String(str).length * size * 0.6;
+}
+
+/**
+ * Metni maxW genişliğe sığdırır: önce yazı boyutunu minSize'a kadar küçültür, yine sığmazsa
+ * ' · ' ayraçlarından (yoksa boşluklardan) satırlara böler. Dönen: { size, lines: string[] }
+ */
+export function fitText(ctx, str, maxW, size, minSize = 12) {
+  const width = (s, sz) => measureText(ctx, s, sz);
+  for (let sz = size; sz >= minSize; sz--) if (width(str, sz) <= maxW) return { size: sz, lines: [str] };
+  const sep = str.includes(' · ') ? ' · ' : ' ';
+  const parts = str.split(sep);
+  const sz = Math.max(minSize, Math.min(size, 15));
+  const lines = [];
+  let cur = '';
+  for (const part of parts) {
+    const next = cur ? cur + sep + part : part;
+    if (cur && width(next, sz) > maxW) {
+      lines.push(cur);
+      cur = part;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) lines.push(cur);
+  // Tek parça yine de taşıyorsa o satır için boyut daha da küçülür (çizimde ölçeklenir).
+  return { size: sz, lines };
+}
+
 export class BaseGame {
   static meta = {
     id: 'base',
@@ -62,8 +128,11 @@ export class BaseGame {
     controls: '',
     description: '',
     hasScore: true, // false: HUD skoru ve rekor gösterimi kapanır
-    // scoreLabel: 'SKOR', lowerIsBetter: false, recordOnWin: false
+    // scoreLabel: 'SKOR', lowerIsBetter: false, recordOnWin: false, theme: ['#accent', '#accent2']
   };
+
+  /** Oyuna özel ayarlar (bkz. resolveSettings). Boş dizi: ayar yok. */
+  static settings = [];
 
   constructor(engine) {
     this.engine = engine;
@@ -84,6 +153,8 @@ export class BaseGame {
     this.overlayDelay = 0;
     /** Overlay arka planının karartma oranı. */
     this.overlayDim = 0.72;
+
+    this.settings = resolveSettings(this.constructor.settings, this.storage.get(this.settingsKey, null));
   }
 
   get meta() {
@@ -107,6 +178,37 @@ export class BaseGame {
   }
   get isEnded() {
     return this.state === 'over' || this.state === 'won';
+  }
+
+  /* ---------- Ayarlar ---------- */
+
+  get settingsKey() {
+    return `settings:${this.meta.id}`;
+  }
+
+  /** Ayarı doğrulayıp kaydeder ve uygular. Geçersiz değer yok sayılır (false döner). */
+  setSetting(id, value) {
+    const def = this.constructor.settings.find((d) => d.id === id);
+    if (!def || !def.options.some((o) => o.value === value)) return false;
+    if (this.settings[id] === value) return true;
+    this.settings[id] = value;
+    this.storage.set(this.settingsKey, { ...this.settings });
+    this.onSettingChange(id, def);
+    return true;
+  }
+
+  /** Varsayılan: oynanışı etkileyen ayar değişince yeni oyun hazırlanır. */
+  onSettingChange(id, def) {
+    if (!def.live) this.init();
+  }
+
+  /** Hazır ekranında gösterilen kısa ayar özeti ("Normal · 3 elma"). */
+  settingsSummary() {
+    return this.constructor.settings
+      .map((def) => def.options.find((o) => o.value === this.settings[def.id]))
+      .filter(Boolean)
+      .map(optionLabel)
+      .join(' · ');
   }
 
   /* ---------- Yaşam döngüsü ---------- */
@@ -205,7 +307,7 @@ export class BaseGame {
     return String(Math.floor(value));
   }
 
-  text(str, x, y, { size = 18, color = NEON.text, align = 'center', baseline = 'middle', weight = '700', glow = 0 } = {}) {
+  text(str, x, y, { size = 18, color = NEON.text, align = 'center', baseline = 'middle', weight = '700', glow = 0, maxWidth = 0 } = {}) {
     const ctx = this.ctx;
     ctx.save();
     ctx.font = `${weight} ${size}px ${FONT}`;
@@ -216,7 +318,9 @@ export class BaseGame {
       ctx.shadowColor = color;
       ctx.shadowBlur = glow;
     }
-    ctx.fillText(str, x, y);
+    // maxWidth: çok dar alanlarda (ve uzun çevirilerde) metni yatayda sıkıştırır, asla taşırmaz.
+    if (maxWidth > 0) ctx.fillText(str, x, y, maxWidth);
+    else ctx.fillText(str, x, y);
     ctx.restore();
   }
 
@@ -230,32 +334,34 @@ export class BaseGame {
     ctx.fillRect(0, HUD_HEIGHT - 1, this.width, 1);
     ctx.restore();
     const y = HUD_HEIGHT / 2 + 1;
+    const third = this.width / 3 - 16;
     if (this.hasScore) {
-      const label = this.meta.scoreLabel || 'SKOR';
-      this.text(`${label} ${this.formatScore(this.score)}`, 14, y, { size: 16, align: 'left', color: NEON.cyan });
+      const label = this.meta.scoreLabel || t('hud.score');
+      this.text(`${label} ${this.formatScore(this.score)}`, 14, y, { size: 16, align: 'left', color: NEON.cyan, maxWidth: third });
       const best = this.best;
-      this.text(`REKOR ${best === null ? '-' : this.formatScore(best)}`, this.width - 14, y, {
-        size: 16, align: 'right', color: NEON.pink,
+      this.text(`${t('hud.best')} ${best === null ? '-' : this.formatScore(best)}`, this.width - 14, y, {
+        size: 16, align: 'right', color: NEON.pink, maxWidth: third,
       });
     }
-    if (center) this.text(center, this.width / 2, y, { size: 15, color: NEON.yellow });
+    if (center) this.text(center, this.width / 2, y, { size: 15, color: NEON.yellow, maxWidth: this.hasScore ? third + 8 : this.width - 28 });
   }
 
   drawButton(rect, label, { selected = false, color = NEON.cyan, size = 15 } = {}) {
     const ctx = this.ctx;
+    const alpha = ctx.globalAlpha;
     ctx.save();
     roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 8);
     ctx.fillStyle = selected ? color : 'rgba(20, 20, 40, 0.95)';
-    ctx.globalAlpha = selected ? 0.9 : 1;
+    ctx.globalAlpha = alpha * (selected ? 0.9 : 1);
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = alpha;
     ctx.lineWidth = 2;
     ctx.strokeStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = selected ? 12 : 4;
     ctx.stroke();
     ctx.restore();
-    this.text(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1, { size, color: selected ? NEON.bg : color });
+    this.text(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1, { size, color: selected ? NEON.bg : color, maxWidth: rect.w - 10 });
   }
 
   /* ---------- Ortak overlay ---------- */
@@ -266,23 +372,40 @@ export class BaseGame {
    */
   overlayContent() {
     if (this.state === 'ready') {
-      return { title: this.meta.title, color: NEON.cyan, lines: [], hint: 'Başlamak için Space / dokun' };
+      const lines = [];
+      const summary = this.settingsSummary();
+      if (summary) lines.push({ text: summary, color: NEON.dim });
+      return { title: this.meta.title, color: NEON.cyan, lines, hint: t('ov.start') };
     }
     const won = this.state === 'won';
     const lines = [];
     if (this.hasScore) {
-      const label = this.meta.scoreLabel ? this.meta.scoreLabel.toLowerCase() : 'skor';
-      lines.push({ text: `${label[0].toLocaleUpperCase('tr')}${label.slice(1)}: ${this.formatScore(this.score)}`, color: NEON.text });
+      const lc = locale();
+      const label = (this.meta.scoreLabel || t('hud.score')).toLocaleLowerCase(lc);
+      lines.push({ text: `${label[0].toLocaleUpperCase(lc)}${label.slice(1)}: ${this.formatScore(this.score)}`, color: NEON.text });
       const best = this.best;
-      if (this.isNewRecord) lines.push({ text: 'YENİ REKOR!', color: NEON.yellow });
-      else if (best !== null) lines.push({ text: `Rekor: ${this.formatScore(best)}`, color: NEON.dim });
+      if (this.isNewRecord) lines.push({ text: t('ov.newRecord'), color: NEON.yellow });
+      else if (best !== null) lines.push({ text: t('ov.best', { v: this.formatScore(best) }), color: NEON.dim });
     }
     return {
-      title: won ? 'KAZANDIN!' : 'OYUN BİTTİ',
+      title: won ? t('ov.won') : t('ov.over'),
       color: won ? NEON.green : NEON.pink,
       lines,
-      hint: 'Enter / dokun ile yeniden başla',
+      hint: t('ov.restart'),
     };
+  }
+
+  /** Overlay'deki butonlar: oyunun menuButtons'ı + (ayarı olan oyunlarda, hazır ekranında) Ayarlar. */
+  overlayButtons() {
+    const buttons = this.menuButtons.slice();
+    const open = this.engine.openSettings;
+    if (this.state === 'ready' && this.constructor.settings.length && typeof open === 'function') {
+      buttons.push({
+        label: t('ov.settingsBtn'), key: 'KeyO', group: 'settings', color: NEON.purple,
+        onClick: () => open.call(this.engine),
+      });
+    }
+    return buttons;
   }
 
   /** Overlay yerleşimini hesaplar (update'te buton isabeti, draw'da çizim için). */
@@ -290,40 +413,56 @@ export class BaseGame {
     if (this.state === 'playing') return null;
     const content = this.overlayContent();
     if (!content) return null;
+    const ctx = this.ctx;
     const w = this.width;
     const h = this.height;
-    const titleSize = Math.min(40, Math.floor(w / 11));
-    const lineH = 28;
     const btnH = 40;
     const gap = 16;
+    const panelW = Math.min(w - 24, 460);
+    const inner = panelW - 32;
+
+    // Başlık ve satırlar panele sığdırılır: gerekirse küçülür ya da satırlara bölünür (taşma yok).
+    const title = fitText(ctx, content.title, inner, Math.min(40, Math.floor(w / 11)), 18);
+    const titleLineH = title.size + 6;
+    const lines = [];
+    for (const raw of content.lines || []) {
+      const line = typeof raw === 'string' ? { text: raw } : raw;
+      const fit = fitText(ctx, line.text, inner, line.size || 18, 12);
+      for (const text of fit.lines) lines.push({ ...line, text, size: fit.size, h: fit.size + 10 });
+    }
+    const hint = content.hint ? fitText(ctx, content.hint, inner, 15, 11) : null;
 
     const groups = [];
-    for (const b of this.menuButtons) {
+    for (const b of this.overlayButtons()) {
       const g = b.group ?? 0;
       let row = groups.find((r) => r.id === g);
       if (!row) groups.push((row = { id: g, items: [] }));
       row.items.push(b);
     }
 
-    const lines = content.lines || [];
-    let total = titleSize + 12 + lines.length * lineH;
+    let total = title.lines.length * titleLineH + 6 + lines.reduce((s, l) => s + l.h, 0);
     if (groups.length) total += gap + groups.length * (btnH + 10) - 10;
-    if (content.hint) total += gap + 22;
+    if (hint) total += gap + hint.lines.length * 20;
 
-    const panelW = Math.min(w - 24, 440);
-    let y = Math.max(16, (h - total) / 2);
+    let y = Math.max(22, (h - total) / 2);
     const layout = {
-      content, titleSize,
+      content,
+      titleSize: title.size,
+      titleLines: [],
       panel: { x: (w - panelW) / 2, y: y - 22, w: panelW, h: total + 44 },
-      titleY: y + titleSize / 2,
       lines: [],
       buttons: [],
-      hintY: 0,
+      hintLines: [],
+      hintSize: hint ? hint.size : 15,
     };
-    y += titleSize + 12;
+    for (const text of title.lines) {
+      layout.titleLines.push({ text, y: y + titleLineH / 2 });
+      y += titleLineH;
+    }
+    y += 6;
     for (const line of lines) {
-      layout.lines.push({ ...(typeof line === 'string' ? { text: line } : line), y: y + lineH / 2 });
-      y += lineH;
+      layout.lines.push({ ...line, y: y + line.h / 2 });
+      y += line.h;
     }
     if (groups.length) {
       y += gap;
@@ -339,8 +478,20 @@ export class BaseGame {
       }
       y -= 10;
     }
-    if (content.hint) layout.hintY = y + gap + 11;
+    if (hint) {
+      y += gap;
+      for (const text of hint.lines) {
+        layout.hintLines.push({ text, y: y + 10 });
+        y += 20;
+      }
+    }
     return layout;
+  }
+
+  /** Overlay'in belirme ilerlemesi (0 → 1): hazır ekranında yüklemeden, bitişte gecikmeden itibaren. */
+  overlayProgress() {
+    const since = this.isEnded ? this.stateTime - this.overlayDelay : this.stateTime;
+    return easeOutCubic(clamp(since / OVERLAY_FADE, 0, 1));
   }
 
   drawOverlay() {
@@ -350,34 +501,39 @@ export class BaseGame {
     if (!layout) return;
     const ctx = this.ctx;
     const { content, panel } = layout;
+    const k = this.overlayProgress();
+    const inner = panel.w - 32;
 
     ctx.save();
+    ctx.globalAlpha = k;
     ctx.fillStyle = `rgba(4, 4, 10, ${this.overlayDim})`;
     ctx.fillRect(0, 0, this.width, this.height);
+    // Panel hafifçe aşağıdan kayarak belirir (hareketi azalt tercihinde yalnızca solar).
+    if (!this.engine.reducedMotion) ctx.translate(0, (1 - k) * 14);
     roundRect(ctx, panel.x, panel.y, panel.w, panel.h, 14);
     ctx.fillStyle = 'rgba(10, 10, 24, 0.9)';
     ctx.fill();
     ctx.strokeStyle = content.color || NEON.cyan;
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = k * 0.55;
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    ctx.restore();
+    ctx.globalAlpha = k;
 
-    this.text(content.title, this.width / 2, layout.titleY, {
-      size: layout.titleSize, color: content.color || NEON.cyan, glow: 16,
-    });
+    for (const line of layout.titleLines) {
+      this.text(line.text, this.width / 2, line.y, { size: layout.titleSize, color: content.color || NEON.cyan, glow: 16, maxWidth: inner });
+    }
     for (const line of layout.lines) {
-      this.text(line.text, this.width / 2, line.y, { size: 18, color: line.color || NEON.text });
+      this.text(line.text, this.width / 2, line.y, { size: line.size, color: line.color || NEON.text, maxWidth: inner });
     }
     for (const b of layout.buttons) {
       this.drawButton(b.rect, b.label, { selected: b.selected ? b.selected() : false, color: b.color || NEON.cyan });
     }
-    if (content.hint) {
-      const blink = 0.55 + 0.45 * Math.sin(this.time * 4);
-      ctx.save();
-      ctx.globalAlpha = blink;
-      this.text(content.hint, this.width / 2, layout.hintY, { size: 15, color: NEON.yellow });
-      ctx.restore();
+    if (layout.hintLines.length) {
+      ctx.globalAlpha = k * (0.55 + 0.45 * Math.sin(this.time * 4));
+      for (const line of layout.hintLines) {
+        this.text(line.text, this.width / 2, line.y, { size: layout.hintSize, color: NEON.yellow, maxWidth: inner });
+      }
     }
+    ctx.restore();
   }
 }

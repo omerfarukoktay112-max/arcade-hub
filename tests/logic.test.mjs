@@ -880,6 +880,304 @@ export function fakeEngine(Game) {
   });
 }
 
+/* ======================= Çoklu dil (i18n) ======================= */
+{
+  const I = await import('../js/core/I18n.js');
+  const { tr } = await import('../js/i18n/tr.js');
+  const { en } = await import('../js/i18n/en.js');
+  const { SnakeGame } = await import('../js/games/SnakeGame.js');
+
+  test('i18n: parametre, çoğul fonksiyon, yedek dil ve dil değişimi', () => {
+    assert.equal(I.getLang(), 'tr');
+    assert.equal(I.t('snake.length', { n: 7 }), 'UZUNLUK 7');
+    assert.equal(I.t('olmayan.anahtar'), 'olmayan.anahtar');
+    let heard = null;
+    const off = I.onLangChange((code) => (heard = code));
+    assert.equal(I.setLang('en'), true);
+    assert.equal(heard, 'en');
+    assert.equal(I.t('snake.apples', { n: 1 }), '1 apple');
+    assert.equal(I.t('snake.apples', { n: 3 }), '3 apples');
+    assert.equal(SnakeGame.meta.title, 'Snake'); // meta metinleri getter: dile anında uyar
+    assert.equal(I.setLang('xx'), false);
+    I.setLang('tr');
+    off();
+    assert.equal(SnakeGame.meta.title, 'Yılan');
+    assert.equal(I.detectLang(['de-DE', 'en-US']), 'en');
+    assert.equal(I.detectLang(['de']), 'tr');
+  });
+
+  test('i18n: sözlüklerin anahtarları birebir aynı', () => {
+    const a = Object.keys(tr).sort();
+    const b = Object.keys(en).sort();
+    assert.deepEqual(a.filter((k) => !b.includes(k)), [], 'en.js eksik anahtarlar');
+    assert.deepEqual(b.filter((k) => !a.includes(k)), [], 'tr.js eksik anahtarlar');
+  });
+}
+
+/* ======================= Ayarlar ve overlay ======================= */
+{
+  const { resolveSettings, fitText, measureText } = await import('../js/core/BaseGame.js');
+  const { SnakeGame } = await import('../js/games/SnakeGame.js');
+  const { ConnectFourGame } = await import('../js/games/ConnectFourGame.js');
+
+  test('ayarlar: kayıtlı değerler şemaya göre doğrulanır', () => {
+    const schema = [
+      { id: 'size', default: 4, options: [{ value: 3 }, { value: 4 }] },
+      { id: 'mode', default: 'a', options: [{ value: 'a' }, { value: 'b' }] },
+    ];
+    assert.deepEqual(resolveSettings(schema, null), { size: 4, mode: 'a' });
+    assert.deepEqual(resolveSettings(schema, { size: 3, mode: 'z', extra: 1 }), { size: 3, mode: 'a' });
+    assert.deepEqual(resolveSettings(schema, 'bozuk'), { size: 4, mode: 'a' });
+  });
+
+  test('ayarlar: setSetting kaydeder; oynanışı etkileyen ayar hazır ekranına döndürür, canlı ayar döndürmez', () => {
+    const { game, engine } = fakeEngine(SnakeGame);
+    game.start();
+    assert.equal(game.setSetting('color', 'pink'), true);
+    assert.equal(game.state, 'playing', 'renk (canlı) oyunu sıfırlamamalı');
+    assert.equal(game.setSetting('size', 'small'), true);
+    assert.equal(game.state, 'ready');
+    assert.equal(game.cols, 15);
+    assert.equal(game.setSetting('size', 'dev'), false, 'geçersiz değer reddedilmeli');
+    assert.equal(game.setSetting('yok', 1), false);
+    assert.deepEqual(engine.storage.get('settings:snake'), { size: 'small', color: 'pink', apples: 1 });
+    // Yeni örnek kayıtlı ayarları okur
+    const again = new SnakeGame(engine);
+    again.init();
+    assert.equal(again.settings.size, 'small');
+    assert.equal(again.cols, 15);
+  });
+
+  test('overlay: uzun metinler küçülür ya da satırlara bölünür, panelden taşmaz', () => {
+    assert.deepEqual(fitText(null, 'KISA', 400, 18), { size: 18, lines: ['KISA'] });
+    const long = 'Oyuncu 1: 1234  ·  Bilgisayar: 5678  ·  Berabere: 910';
+    const fit = fitText(null, long, 300, 18, 12);
+    assert.ok(fit.lines.length > 1, 'bölünmedi');
+    for (const line of fit.lines) assert.ok(measureText(null, line, fit.size) <= 300, `taşan satır: ${line}`);
+    // Connect Four bitiş ekranı: her satır panel genişliğine sığar
+    const { game } = fakeEngine(ConnectFourGame);
+    Object.assign(game.tally, { 1: 123456, 2: 654321, draw: 999999 });
+    game.win = { player: 2, cells: [] };
+    game.state = 'over';
+    game.stateTime = 5;
+    const L = game.overlayLayout();
+    const inner = L.panel.w - 32;
+    for (const l of [...L.titleLines.map((x) => ({ ...x, size: L.titleSize })), ...L.lines]) {
+      assert.ok(measureText(null, l.text, l.size) <= inner, `taşma: "${l.text}"`);
+    }
+    Object.assign(game.tally, { 1: 0, 2: 0, draw: 0 });
+  });
+}
+
+/* ======================= Snake ayarları ======================= */
+{
+  const { SnakeGame, stepSnake, fillFoods, gridFor, DIRS } = await import('../js/games/SnakeGame.js');
+
+  test('snake: çoklu elma — yenen elma listeden çıkar, sayı tamamlanır, yemler çakışmaz', () => {
+    const snake = [{ x: 2, y: 2 }, { x: 1, y: 2 }];
+    const foods = [{ x: 5, y: 5 }, { x: 3, y: 2 }];
+    const r = stepSnake(snake, DIRS.right, foods, 10, 10);
+    assert.equal(r.ate, true);
+    assert.equal(r.foodIndex, 1);
+    assert.equal(r.snake.length, 3);
+    const rng = seeded(11);
+    const filled = fillFoods([], 5, snake, 4, 4, rng);
+    assert.equal(filled.length, 5);
+    const keys = new Set(filled.map((f) => `${f.x},${f.y}`));
+    assert.equal(keys.size, 5, 'aynı hücrede iki yem');
+    assert.ok(filled.every((f) => !snake.some((s) => s.x === f.x && s.y === f.y)));
+    // Yer kalmadıysa eksik kalır
+    assert.equal(fillFoods([], 50, snake, 4, 4, rng).length, 14);
+  });
+
+  test('snake: harita boyutları ve oyun içi elma sayısı', () => {
+    assert.deepEqual(gridFor('normal'), { cell: 20, cols: 30, rows: 28 });
+    assert.deepEqual(gridFor('large'), { cell: 15, cols: 40, rows: 37 });
+    const { game } = fakeEngine(SnakeGame);
+    game.setSetting('apples', 5);
+    assert.equal(game.foods.length, 5);
+    game.start();
+    // Yılanı bir yemin hemen soluna koy ve bir adım at
+    game.snake = [{ x: 9, y: 10 }, { x: 8, y: 10 }];
+    game.foods = fillFoods([{ x: 10, y: 10 }], 5, game.snake, game.cols, game.rows, seeded(3));
+    game.dir = DIRS.right;
+    game.queue = [];
+    game.step();
+    assert.equal(game.score, 10);
+    assert.equal(game.snake.length, 3);
+    assert.equal(game.foods.length, 5, 'yenen elmanın yerine yenisi gelmeli');
+    assert.ok(!game.foods.some((f) => f.x === 10 && f.y === 10), 'yenen elma listede kaldı');
+  });
+}
+
+/* ======================= 2048 ayarları ======================= */
+{
+  const { Game2048, moveGrid, canMove, emptyGrid, toRoman, romanParts, targetFor } = await import('../js/games/Game2048.js');
+
+  test('2048: 3×3 / 5×5 ızgarada kaydırma ve hamle kontrolü', () => {
+    const g3 = [[2, 2, 0], [0, 4, 4], [8, 0, 8]];
+    assert.deepEqual(moveGrid(g3, 'left').grid, [[4, 0, 0], [8, 0, 0], [16, 0, 0]]);
+    assert.deepEqual(moveGrid(g3, 'down').grid, [[0, 0, 0], [2, 2, 4], [8, 4, 8]]);
+    assert.equal(emptyGrid(5).length, 5);
+    assert.equal(emptyGrid(5)[0].length, 5);
+    assert.equal(canMove([[2, 4, 2], [4, 2, 4], [2, 4, 2]]), false);
+    assert.equal(canMove([[2, 4, 2], [4, 2, 4], [2, 4, 4]]), true);
+    const { game } = fakeEngine(Game2048);
+    game.setSetting('size', 5);
+    assert.equal(game.grid.length, 5);
+    assert.equal(game.target, 4096);
+    assert.equal(game.recordKey, '2048-5');
+    game.setSetting('size', 4);
+    assert.equal(game.recordKey, '2048', '4×4 eski rekor anahtarını korumalı');
+    assert.equal(targetFor(3), 512);
+  });
+
+  test('2048: Roma rakamları (ve 4000+ için üst çizgili binler)', () => {
+    assert.equal(toRoman(2), 'II');
+    assert.equal(toRoman(4), 'IV');
+    assert.equal(toRoman(128), 'CXXVIII');
+    assert.equal(toRoman(2048), 'MMXLVIII');
+    assert.equal(toRoman(3999), 'MMMCMXCIX');
+    assert.deepEqual(romanParts(1024), { high: '', low: 'MXXIV' });
+    assert.deepEqual(romanParts(4096), { high: 'IV', low: 'XCVI' });
+    assert.deepEqual(romanParts(8192), { high: 'VIII', low: 'CXCII' });
+    const { game } = fakeEngine(Game2048);
+    game.setSetting('numerals', 'roman');
+    assert.equal(game.formatTile(256), 'CCLVI');
+    assert.equal(game.formatTile(8192), '8192');
+    game.setSetting('numerals', 'arabic');
+    assert.equal(game.formatTile(256), '256');
+  });
+}
+
+/* ======================= Breakout güçlendirmeleri ======================= */
+{
+  const { BreakoutGame, pickPowerUp, splitBall, POWERUPS, MAX_BALLS } = await import('../js/games/BreakoutGame.js');
+
+  test('breakout: güçlendirme seçimi olasılığa uyar, kapalıyken hiç düşmez', () => {
+    const rng = seeded(5);
+    let drops = 0;
+    const seen = new Set();
+    for (let i = 0; i < 4000; i++) {
+      const p = pickPowerUp(rng, 0.2);
+      if (p) {
+        drops++;
+        seen.add(p);
+      }
+    }
+    assert.ok(drops > 650 && drops < 950, `beklenen ~800, gelen ${drops}`);
+    assert.deepEqual([...seen].sort(), Object.keys(POWERUPS).sort());
+    for (let i = 0; i < 100; i++) assert.equal(pickPowerUp(rng, 0), null);
+  });
+
+  test('breakout: top üçe bölünür, hız korunur ve hiçbiri yatay değildir', () => {
+    const ball = { x: 100, y: 200, vx: 0, vy: -400, stuck: false };
+    const balls = splitBall(ball, 3);
+    assert.equal(balls.length, 3);
+    for (const b of balls) {
+      assert.ok(Math.abs(Math.hypot(b.vx, b.vy) - 400) < 1e-6);
+      assert.ok(b.vy < 0 && Math.abs(b.vy) >= 400 * 0.3 - 1e-9);
+    }
+    const flat = splitBall({ x: 0, y: 0, vx: 400, vy: -10 }, 3);
+    for (const b of flat) assert.ok(Math.abs(b.vy) >= 120 - 1e-9, 'neredeyse yatay kopya');
+  });
+
+  test('breakout: çoklu top, geniş raket, lazer, ateş topu, ek can ve top kaybı', () => {
+    const { game, step } = fakeEngine(BreakoutGame);
+    game.start();
+    game.applyPowerUp('multi');
+    assert.equal(game.balls.length, 3);
+    for (let i = 0; i < 10; i++) game.applyPowerUp('multi');
+    assert.ok(game.balls.length <= MAX_BALLS);
+    game.applyPowerUp('wide');
+    for (let i = 0; i < 60; i++) step();
+    assert.ok(game.paddleW > 150, 'raket genişlemedi');
+    game.applyPowerUp('life');
+    assert.equal(game.lives, 4);
+    // Lazer: tuğla vurur
+    const hp = game.bricks.reduce((s, b) => s + b.hp, 0);
+    game.balls = [{ x: 300, y: 600, vx: 0, vy: 0, stuck: true }];
+    game.applyPowerUp('laser');
+    for (let i = 0; i < 90; i++) step();
+    assert.ok(game.bricks.reduce((s, b) => s + b.hp, 0) < hp, 'lazer tuğla kırmadı');
+    // Ateş topu: sağlam tuğlayı tek temasta deler, yön değişmez
+    game.effects.fire = 5;
+    const brick = game.bricks.find((b) => b.hp > 0);
+    brick.hp = 2;
+    game.ball = { x: brick.x + brick.w / 2, y: brick.y + brick.h + 10, vx: 0, vy: -300, stuck: false };
+    game.stepBall(0.05);
+    assert.equal(brick.hp, 0);
+    assert.ok(game.ball.vy < 0, 'ateş topu sekmemeli');
+    // İki toptan biri düşerse can gitmez; son top düşerse gider ve etkiler sıfırlanır
+    const lives = game.lives;
+    game.balls = [{ x: 300, y: 695, vx: 0, vy: 400, stuck: false }, { x: 300, y: 300, vx: 0, vy: -100, stuck: false }];
+    game.stepBall(0.1);
+    assert.equal(game.balls.length, 1);
+    assert.equal(game.lives, lives);
+    game.balls = [{ x: 300, y: 695, vx: 0, vy: 400, stuck: false }];
+    game.stepBall(0.1);
+    assert.equal(game.lives, lives - 1);
+    assert.equal(game.effects.fire, 0);
+    assert.equal(game.ball.stuck, true);
+  });
+
+  test('breakout: yakalanan kapsül etkiyi uygular, kaçan kapsül kaybolur', () => {
+    const { game, step } = fakeEngine(BreakoutGame);
+    game.start();
+    game.drops = [
+      { x: game.paddle.x + game.paddleW / 2, y: 640, type: 'slow' },
+      { x: 5, y: 690, type: 'wide' },
+    ];
+    game.paddle.x = Math.max(0, game.paddle.x);
+    for (let i = 0; i < 30; i++) step();
+    assert.ok(game.effects.slow > 0, 'kapsül yakalanmadı');
+    assert.equal(game.drops.length, 0);
+  });
+}
+
+/* ======================= Flappy ve Memory ayarları ======================= */
+{
+  const { FlappyGame, BIRD_COLORS, BIRD_SKINS } = await import('../js/games/FlappyGame.js');
+  const { MemoryGame, createDeck, computeScore, faceOf, gridLayout, GRIDS } = await import('../js/games/MemoryGame.js');
+
+  test('flappy: renk ve görünüm canlı değişir, oyunu sıfırlamaz', () => {
+    const { game } = fakeEngine(FlappyGame);
+    game.start();
+    for (const c of Object.keys(BIRD_COLORS)) assert.equal(game.setSetting('color', c), true);
+    for (const s of BIRD_SKINS) assert.equal(game.setSetting('skin', s), true);
+    assert.equal(game.state, 'playing');
+  });
+
+  test('memory: ızgara boyutları — benzersiz yüzler, sığan kartlar, çift başına puan', () => {
+    for (const [id, { cols, rows }] of Object.entries(GRIDS)) {
+      const pairs = (cols * rows) / 2;
+      const deck = createDeck(seeded(2), pairs);
+      assert.equal(deck.length, cols * rows, id);
+      const faces = new Set(Array.from({ length: pairs }, (_, i) => JSON.stringify(faceOf(i))));
+      assert.equal(faces.size, pairs, `${id}: yinelenen şekil+renk`);
+      const { card, gx, gy } = gridLayout(cols, rows);
+      assert.ok(gx >= 0 && gx + cols * card <= 600 && gy >= 40 && gy + rows * card <= 650, `${id}: taşma`);
+    }
+    assert.equal(computeScore(15, 15), 1875);
+    assert.ok(computeScore(20, 15) < computeScore(15, 15));
+    const { game } = fakeEngine(MemoryGame);
+    game.setSetting('grid', 'expert');
+    assert.equal(game.cards.length, 30);
+    assert.equal(game.recordKey, 'memory-expert');
+    game.start();
+    const done = new Set();
+    game.cards.forEach((c, i) => {
+      if (done.has(i)) return;
+      const j = game.cards.findIndex((d, k) => k !== i && d.face === c.face);
+      done.add(i).add(j);
+      game.flipCard(i);
+      game.flipCard(j);
+    });
+    assert.equal(game.state, 'won');
+    assert.equal(game.score, 1875);
+  });
+}
+
 /* ======================= Koşucu ======================= */
 let failed = 0;
 for (const { name, fn } of results) {

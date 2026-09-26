@@ -1,4 +1,5 @@
 import { BaseGame, NEON, clamp } from '../core/BaseGame.js';
+import { t } from '../core/I18n.js';
 
 const W = 800;
 const H = 500;
@@ -46,20 +47,21 @@ export function predictY(x, y, vx, vy, targetX, height = H, size = BALL) {
 export class PongGame extends BaseGame {
   static meta = {
     id: 'pong',
-    title: 'Pong',
+    get title() { return t('pong.title'); },
     width: W,
     height: H,
     hasScore: false,
-    controls: 'Oyuncu 1: W/S · Oyuncu 2: ↑/↓ (tek oyuncuda ↑/↓ de oyuncu 1) · 1/2: mod seçimi · Mobil: dokunduğun yere raket gider',
-    description: 'Klasik Pong. Bilgisayara karşı ya da aynı klavyede iki kişi oyna; 7 sayıya ulaşan kazanır.',
+    theme: [NEON.text, NEON.cyan],
+    get controls() { return t('pong.controls'); },
+    get description() { return t('pong.description'); },
   };
 
   constructor(engine) {
     super(engine);
     this.mode = this.storage.get('pong:mode', 1) === 2 ? 2 : 1;
     this.menuButtons = [
-      { label: '1 Oyuncu', key: 'Digit1', selected: () => this.mode === 1, onClick: () => this.setMode(1) },
-      { label: '2 Oyuncu', key: 'Digit2', selected: () => this.mode === 2, onClick: () => this.setMode(2) },
+      { get label() { return t('mode.1p'); }, key: 'Digit1', selected: () => this.mode === 1, onClick: () => this.setMode(1) },
+      { get label() { return t('mode.2p'); }, key: 'Digit2', selected: () => this.mode === 2, onClick: () => this.setMode(2) },
     ];
     this.overlayDelay = 0.3;
   }
@@ -222,11 +224,11 @@ export class PongGame extends BaseGame {
   overlayContent() {
     const c = super.overlayContent();
     if (this.state === 'ready') {
-      c.lines = [{ text: `${WIN_SCORE} sayıya ulaşan kazanır`, color: NEON.dim }];
+      c.lines = [{ text: t('pong.ready', { n: WIN_SCORE }), color: NEON.dim }];
       return c;
     }
-    if (this.mode === 2) c.title = `OYUNCU ${this.winner} KAZANDI`;
-    else c.title = this.winner === 1 ? 'KAZANDIN!' : 'KAYBETTİN';
+    if (this.mode === 2) c.title = t('common.playerWins', { n: this.winner });
+    else c.title = this.winner === 1 ? t('ov.won') : t('ov.lost');
     c.color = this.winner === 1 ? NEON.cyan : NEON.pink;
     c.lines = [{ text: `${this.s1}  –  ${this.s2}`, color: NEON.text }];
     return c;
@@ -253,8 +255,8 @@ export class PongGame extends BaseGame {
     // Skorlar
     this.text(String(this.s1), W / 2 - 70, 56, { size: 56, color: 'rgba(34, 228, 255, 0.55)' });
     this.text(String(this.s2), W / 2 + 70, 56, { size: 56, color: 'rgba(255, 46, 136, 0.55)' });
-    this.text(this.mode === 1 ? 'SEN' : 'OYUNCU 1', W / 4, 22, { size: 13, color: NEON.dim });
-    this.text(this.mode === 1 ? 'BİLGİSAYAR' : 'OYUNCU 2', (W * 3) / 4, 22, { size: 13, color: NEON.dim });
+    this.text(this.mode === 1 ? t('common.YOU') : t('common.PLAYER', { n: 1 }), W / 4, 22, { size: 13, color: NEON.dim });
+    this.text(this.mode === 1 ? t('common.COMPUTER') : t('common.PLAYER', { n: 2 }), (W * 3) / 4, 22, { size: 13, color: NEON.dim });
 
     // Raketler
     const paddle = (p, color) => {

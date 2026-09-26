@@ -84,7 +84,7 @@ const KEYS = {
   ArrowLeft: { key: 'ArrowLeft', keyCode: 37 }, ArrowRight: { key: 'ArrowRight', keyCode: 39 },
   KeyP: { key: 'p', keyCode: 80 }, KeyC: { key: 'c', keyCode: 67 }, KeyN: { key: 'n', keyCode: 78 },
   KeyR: { key: 'r', keyCode: 82 }, KeyW: { key: 'w', keyCode: 87 }, KeyS: { key: 's', keyCode: 83 },
-  KeyH: { key: 'h', keyCode: 72 },
+  KeyH: { key: 'h', keyCode: 72 }, KeyO: { key: 'o', keyCode: 79 },
   Digit1: { key: '1', keyCode: 49 }, Digit2: { key: '2', keyCode: 50 }, Digit3: { key: '3', keyCode: 51 },
 };
 async function key(code, holdMs = 30) {
@@ -489,7 +489,172 @@ try {
   expect(await evaluate(`${G}.running`), 'dokunma: Life OYNAT düğmesi çalışmadı');
   await shot('mobile-touch-life');
 
-  console.log(`\n${games.length} oyun hash/menü/hızlı geçiş/mobil/dokunmatik kontrolünden geçirildi.`);
+  // 6) Dil, oyun teması, ayar paneli ve oyun ayarları (masaüstü görünümüne dönülür)
+  await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await send('Emulation.clearDeviceMetricsOverride');
+  await sleep(200);
+  const text = (sel) => evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent.trim()`);
+
+  // Dil seçici (gerçek <select> değişimi) → başlık, menü, üst çubuk ve canvas metinleri
+  await go('snake');
+  await evaluate(`(() => { const s = document.getElementById('lang-select'); s.value = 'en'; s.dispatchEvent(new Event('change')); })()`);
+  await sleep(150);
+  expect((await text('#game-title')) === 'Snake', `dil: İngilizce başlık yok (${await text('#game-title')})`);
+  expect((await evaluate('document.documentElement.lang')) === 'en', 'dil: <html lang> güncellenmedi');
+  expect((await text('.menu-btn[data-id="breakout"]')) === 'Breakout', 'dil: menü etiketi değişmedi');
+  expect((await evaluate(`document.getElementById('pause-btn').getAttribute('aria-label')`)) === 'Pause', 'dil: üst çubuk düğmesi değişmedi');
+  expect((await evaluate(`${G}.overlayContent().hint`)).startsWith('Press'), 'dil: canvas overlay metni değişmedi');
+  expect((await evaluate(`JSON.parse(localStorage.getItem('arcade-hub:lang'))`)) === 'en', 'dil: seçim kaydedilmedi');
+  await shot('i18n-en-snake');
+  await evaluate(`window.arcadeHub.setLang('tr')`);
+  await sleep(100);
+  expect((await text('#game-title')) === 'Yılan', 'dil: Türkçeye dönülmedi');
+
+  // Oyun teması: --accent oyunun meta.theme rengine geçer ve menü/üst çubuk bunu kullanır
+  await go('breakout');
+  // Hedef değer satır içi değişkendir; hesaplanan değer @property geçişi sırasında ara renktir.
+  const accent = await evaluate(`document.documentElement.style.getPropertyValue('--accent')`);
+  const want = await evaluate(`${G}.constructor.meta.theme[0]`);
+  expect(accent === want, `tema: --accent oyun rengine geçmedi (${accent} ≠ ${want})`);
+  await sleep(700);
+  const settled = await evaluate(`(() => { const d = document.createElement('i'); d.style.color = ${G}.constructor.meta.theme[0];
+    document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove();
+    return c === getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(); })()`);
+  expect(settled, 'tema: renk geçişi 0,7 sn içinde hedefe ulaşmadı');
+  expect(await evaluate(`document.documentElement.dataset.game === 'breakout'`), 'tema: data-game ayarlanmadı');
+
+  // Ayar paneli: düğmeyle açılır, oyun askıya alınır, seçenek uygulanır, Esc duraklatmayı değiştirmeden kapatır
+  await go('snake');
+  await evaluate(`document.getElementById('settings-btn').click()`);
+  await sleep(350);
+  expect(await evaluate(`document.getElementById('settings').classList.contains('open')`), 'ayarlar: panel açılmadı');
+  expect(await evaluate('window.arcadeHub.engine.suspended'), 'ayarlar: oyun askıya alınmadı');
+  const optCount = await evaluate(`document.querySelectorAll('#settings-body .opt').length`);
+  expect(optCount === 4 + 6 + 4, `ayarlar: Snake için 14 seçenek bekleniyordu, ${optCount}`);
+  await evaluate(`document.querySelector('#settings-body .opt[data-setting="size"][data-index="0"]').click()`);
+  await evaluate(`document.querySelector('#settings-body .opt[data-setting="apples"][data-index="2"]').click()`);
+  await evaluate(`document.querySelector('#settings-body .opt[data-setting="color"][data-index="5"]').click()`);
+  await sleep(200);
+  await shot('settings-snake-panel');
+  expect(await evaluate(`${G}.cols === 15 && ${G}.rows === 14`), 'ayarlar: Snake harita boyutu uygulanmadı');
+  expect(await evaluate(`${G}.foods.length === 3`), 'ayarlar: Snake elma sayısı uygulanmadı');
+  await key('Escape');
+  await sleep(350);
+  expect(!(await evaluate(`document.getElementById('settings').classList.contains('open')`)), 'ayarlar: Esc paneli kapatmadı');
+  const afterEsc = await state();
+  expect(!afterEsc.paused && afterEsc.state === 'ready', `ayarlar: Esc oyuna sızdı ${JSON.stringify(afterEsc)}`);
+  // Canvas içindeki "⚙ Ayarlar" düğmesi (O kısayolu) da paneli açar
+  await key('KeyO');
+  await sleep(300);
+  expect(await evaluate(`document.getElementById('settings').classList.contains('open')`), 'ayarlar: O kısayolu paneli açmadı');
+  await evaluate('window.arcadeHub.closeSettings()');
+  expect(await evaluate(`JSON.parse(localStorage.getItem('arcade-hub:settings:snake')).apples === 3`), 'ayarlar: kaydedilmedi');
+  await key('Space');
+  await sleep(600);
+  await shot('settings-snake-play');
+  // Oynarken panel açılıp kapanırsa oyun duraklatılmış olarak döner
+  await evaluate('window.arcadeHub.openSettings()');
+  await sleep(100);
+  await evaluate('window.arcadeHub.closeSettings()');
+  expect((await state()).paused, 'ayarlar: oynanan oyun panel kapanınca duraklatılmadı');
+  await evaluate(`${G}.setSetting('size', 'normal'); ${G}.setSetting('apples', 1); ${G}.setSetting('color', 'green')`);
+
+  // 2048: 5×5 + Roma rakamları
+  await go('2048');
+  await evaluate(`${G}.setSetting('size', 5); ${G}.setSetting('numerals', 'roman'); ${G}.restart();
+    ${G}.grid = [[2,4,8,16,32],[64,128,256,512,1024],[2048,4096,0,0,0],[0,0,0,0,0],[0,0,0,0,2]]`);
+  await sleep(300);
+  expect(await evaluate(`${G}.grid.length === 5 && ${G}.target === 4096`), '2048: 5×5 ızgara/hedef uygulanmadı');
+  await shot('2048-roman-5x5');
+  await evaluate(`${G}.setSetting('size', 3)`);
+  expect(await evaluate(`${G}.grid.length === 3 && ${G}.state === 'ready'`), '2048: 3×3 yeni oyun başlatmadı');
+  await evaluate(`${G}.setSetting('size', 4); ${G}.setSetting('numerals', 'arabic')`);
+
+  // Memory: uzman ızgara (5×6 = 15 çift)
+  await go('memory');
+  await evaluate(`${G}.setSetting('grid', 'expert'); ${G}.start(); ${G}.cards.forEach((c, i) => { if (i % 3) c.target = 1; })`);
+  await sleep(500);
+  expect(await evaluate(`${G}.cards.length === 30 && ${G}.pairs === 15`), 'memory: uzman ızgara uygulanmadı');
+  await shot('memory-expert');
+  await evaluate(`${G}.setSetting('grid', 'normal')`);
+
+  // Flappy: renk + aksesuar
+  await go('flappy');
+  await evaluate(`${G}.setSetting('color', 'ice'); ${G}.setSetting('skin', 'crown')`);
+  await sleep(300);
+  await shot('flappy-skin');
+  await evaluate(`${G}.setSetting('color', 'yellow'); ${G}.setSetting('skin', 'classic')`);
+
+  // Breakout: güçlendirmeler
+  await go('breakout');
+  await evaluate(`${G}.start(); ${G}.applyPowerUp('multi'); ${G}.applyPowerUp('wide'); ${G}.applyPowerUp('laser');
+    ${G}.drops.push({ x: 300, y: 400, type: 'fire' }, { x: 420, y: 300, type: 'slow' })`);
+  expect(await evaluate(`${G}.balls.length === 3`), 'breakout: çoklu top 3 top üretmedi');
+  await sleep(700);
+  expect(await evaluate(`${G}.paddleW > 140`), 'breakout: raket genişlemedi');
+  expect(await evaluate(`${G}.lasers.length > 0 || ${G}.effects.laser > 0`), 'breakout: lazer etkin değil');
+  await shot('breakout-powerups');
+
+  // Bitiş/hazır ekranları: her oyunda, her dilde tüm metinler panele sığmalı (Connect Four taşma hatası)
+  const fitProblems = await evaluate(`(async () => {
+    const hub = window.arcadeHub;
+    const out = [];
+    const font = getComputedStyle(document.documentElement).getPropertyValue('--font');
+    for (const lang of ['tr', 'en']) {
+      hub.setLang(lang);
+      for (const Game of hub.games) {
+        const id = Game.meta.id;
+        location.hash = id;
+        await new Promise((r) => setTimeout(r, 30));
+        const g = hub.engine.game;
+        const ctx = hub.engine.ctx;
+        const setups = [['ready', () => {}], ['over', () => {}], ['won', () => {}]];
+        if (id === 'connect4') {
+          setups.push(['over', () => { g.mode = 1; g.win = { player: 2, cells: [] }; }]);
+          setups.push(['won', () => { g.mode = 2; g.win = { player: 2, cells: [] }; }]);
+          setups.push(['over', () => { g.win = null; g.draw_ = true; }]);
+          Object.assign(g.tally, { 1: 1234, 2: 5678, draw: 910 });
+        }
+        for (const [st, prep] of setups) {
+          if (id === 'connect4') { g.win = { player: 1, cells: [] }; g.draw_ = false; }
+          if (id === 'pong') { g.winner = 2; g.s1 = 5; g.s2 = 7; }
+          if (id === 'tictactoe') g.result = { player: 'O', line: null };
+          prep();
+          g.state = st; g.stateTime = 10;
+          const L = g.overlayLayout();
+          if (!L) continue;
+          const inner = L.panel.w - 32;
+          const measure = (str, size) => { ctx.save(); ctx.font = '700 ' + size + 'px ' + font; const w = ctx.measureText(str).width; ctx.restore(); return w; };
+          const texts = [...L.titleLines.map((l) => [l.text, L.titleSize]), ...L.lines.map((l) => [l.text, l.size]), ...L.hintLines.map((l) => [l.text, L.hintSize])];
+          for (const [str, size] of texts) {
+            const w = measure(str, size);
+            if (w > inner + 1) out.push(lang + ' ' + id + '/' + st + ': "' + str + '" ' + Math.round(w) + ' > ' + Math.round(inner));
+          }
+          const p = L.panel;
+          if (p.x < 0 || p.y < 0 || p.x + p.w > g.width || p.y + p.h > g.height) out.push(lang + ' ' + id + '/' + st + ': panel canvas dışına taşıyor');
+        }
+        if (id === 'connect4') Object.assign(g.tally, { 1: 0, 2: 0, draw: 0 });
+        g.init();
+      }
+    }
+    hub.setLang('tr');
+    return out;
+  })()`);
+  for (const p of fitProblems) problems.push(`taşma: ${p}`);
+
+  // Connect Four bitiş ekranı görsel kontrolü (uzun skor tablosu, İngilizce ve Türkçe)
+  for (const lang of ['tr', 'en']) {
+    await evaluate(`window.arcadeHub.setLang('${lang}')`);
+    await go('connect4');
+    await evaluate(`(() => { const g = ${G}; g.mode = 1; Object.assign(g.tally, { 1: 12, 2: 107, draw: 3 });
+      g.win = { player: 2, cells: [[5,0],[5,1],[5,2],[5,3]] }; g.board[5] = [2,2,2,2,0,0,0]; g.gameOver(false); g.stateTime = 5; })()`);
+    await sleep(400);
+    await shot(`connect4-end-${lang}`);
+    await evaluate(`Object.assign(${G}.tally, { 1: 0, 2: 0, draw: 0 }); ${G}.init()`);
+  }
+  await evaluate(`window.arcadeHub.setLang('tr')`);
+
+  console.log(`\n${games.length} oyun hash/menü/hızlı geçiş/mobil/dokunmatik/dil/ayar/taşma kontrolünden geçirildi.`);
 } catch (err) {
   problems.push(`test hatası: ${err.stack || err.message}`);
 }

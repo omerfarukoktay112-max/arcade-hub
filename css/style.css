@@ -1,4 +1,22 @@
+/*
+ * Oyun teması: app.js her oyunda --accent / --accent-2'yi oyunun meta.theme renkleriyle değiştirir.
+ * @property kaydı sayesinde renkler (ve onları kullanan degradeler) yumuşakça geçiş yapar.
+ */
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #22e4ff;
+}
+
+@property --accent-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff2e88;
+}
+
 :root {
+  --accent: #22e4ff;
+  --accent-2: #ff2e88;
   --bg: #07070d;
   --bg-2: #0e0e1c;
   --line: #22223d;
@@ -8,7 +26,9 @@
   --pink: #ff2e88;
   --yellow: #ffe14d;
   --font: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", "Courier New", monospace;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
+  transition: --accent 0.5s ease, --accent-2 0.5s ease;
 }
 
 *,
@@ -25,8 +45,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(ellipse at 50% -20%, rgba(34, 228, 255, 0.10), transparent 60%),
-    radial-gradient(ellipse at 100% 110%, rgba(255, 46, 136, 0.08), transparent 55%),
+    radial-gradient(ellipse at 50% -20%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 60%),
+    radial-gradient(ellipse at 100% 110%, color-mix(in srgb, var(--accent-2) 9%, transparent), transparent 55%),
     var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -37,9 +57,22 @@ body {
   overflow-x: hidden;
 }
 
-button {
+button,
+select {
   font: inherit;
   color: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- Üst çubuk ---------- */
@@ -50,7 +83,9 @@ button {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 45%, color-mix(in srgb, var(--accent-2) 6%, transparent));
+  box-shadow: 0 1px 18px -8px var(--accent);
 }
 
 .logo {
@@ -71,24 +106,66 @@ button {
 .toolbar {
   display: flex;
   gap: 8px;
+  min-width: 0;
 }
 
+/* Üst çubuk düğmeleri: arka planları seçili oyunun renk paletinden türetilir. */
 .tool-btn {
-  background: var(--bg-2);
-  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 20%, var(--bg-2)),
+    color-mix(in srgb, var(--accent-2) 12%, var(--bg-2)));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s var(--ease-out), filter 0.15s;
+}
+
+.tool-btn .ico {
+  line-height: 1;
 }
 
 .tool-btn:hover,
-.tool-btn:focus-visible {
-  border-color: var(--cyan);
-  box-shadow: 0 0 8px rgba(34, 228, 255, 0.4);
+.tool-btn:focus-visible,
+.tool-btn:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+  filter: brightness(1.12);
   outline: none;
+}
+
+.tool-btn:active {
+  transform: translateY(1px);
+}
+
+.lang-pick {
+  position: relative;
+  padding-right: 6px;
+}
+
+.lang-pick select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 14px 0 0;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 5px top 55%, right 1px top 55%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.lang-pick select option {
+  background: var(--bg-2);
+  color: var(--text);
 }
 
 .tool-btn[aria-pressed="true"] {
@@ -96,9 +173,10 @@ button {
 }
 
 .tool-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
   box-shadow: none;
+  filter: grayscale(0.6);
   border-color: var(--line);
 }
 
@@ -114,7 +192,12 @@ button {
 }
 
 .menu-btn {
+  --btn-accent: var(--cyan);
+  --btn-accent-2: var(--pink);
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -125,21 +208,38 @@ button {
   color: var(--dim);
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.2s, background 0.2s, transform 0.2s var(--ease-out);
+}
+
+/* Her oyunun kendi renginde küçük bir gösterge noktası */
+.menu-btn::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--btn-accent);
+  box-shadow: 0 0 6px var(--btn-accent);
+  flex: none;
 }
 
 .menu-btn:hover,
 .menu-btn:focus-visible {
   color: var(--text);
-  border-color: var(--cyan);
+  border-color: var(--btn-accent);
+  transform: translateY(-1px);
   outline: none;
 }
 
 .menu-btn.active {
   color: var(--bg);
-  background: var(--cyan);
-  border-color: var(--cyan);
-  box-shadow: 0 0 12px rgba(34, 228, 255, 0.65);
+  background: linear-gradient(135deg, var(--btn-accent), var(--btn-accent-2));
+  border-color: var(--btn-accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--btn-accent) 65%, transparent);
+}
+
+.menu-btn.active::before {
+  background: var(--bg);
+  box-shadow: none;
 }
 
 /* ---------- Sahne ---------- */
@@ -159,8 +259,48 @@ button {
   margin: 0 0 10px;
   font-size: 20px;
   letter-spacing: 0.08em;
-  color: var(--pink);
-  text-shadow: 0 0 10px rgba(255, 46, 136, 0.6);
+  color: var(--accent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ---------- Oyun geçişi: başlık ve metinler aşağıdan belirir, canvas parlaması nabız atar ---------- */
+
+.stage.entering .game-title {
+  animation: rise-in 0.45s var(--ease-out) both;
+}
+
+.stage.entering .game-description {
+  animation: rise-in 0.5s var(--ease-out) 0.06s both;
+}
+
+.stage.entering .game-controls {
+  animation: rise-in 0.5s var(--ease-out) 0.12s both;
+}
+
+.stage.entering #game-canvas {
+  animation: canvas-glow 0.7s ease-out;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes canvas-glow {
+  from {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      0 0 50px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 0 90px color-mix(in srgb, var(--accent-2) 30%, transparent);
+  }
 }
 
 .canvas-wrap {
@@ -186,9 +326,9 @@ button {
   background: var(--bg);
   border-radius: 6px;
   box-shadow:
-    0 0 0 1px rgba(34, 228, 255, 0.35),
-    0 0 24px rgba(34, 228, 255, 0.18),
-    0 0 60px rgba(255, 46, 136, 0.08);
+    0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 60px color-mix(in srgb, var(--accent-2) 9%, transparent);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -229,6 +369,182 @@ button {
   color: var(--yellow);
 }
 
+/* ---------- Ayar paneli (sağdan kayan çekmece; mobilde alttan açılan sayfa) ---------- */
+
+.settings {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  visibility: hidden;
+  pointer-events: none;
+  transition: visibility 0s linear 0.3s;
+}
+
+.settings.open {
+  visibility: visible;
+  pointer-events: auto;
+  transition: visibility 0s;
+}
+
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 4, 10, 0.55);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.settings.open .settings-backdrop {
+  opacity: 1;
+}
+
+.settings-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 40%),
+    var(--bg-2);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: -10px 0 40px -10px color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateX(104%);
+  transition: transform 0.32s var(--ease-out);
+}
+
+.settings.open .settings-panel {
+  transform: none;
+}
+
+.settings-head,
+.settings-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.settings-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-foot {
+  border-top: 1px solid var(--line);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px 16px;
+}
+
+.settings-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.settings-empty {
+  color: var(--dim);
+}
+
+.setting {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.setting legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--yellow);
+}
+
+.setting legend .live {
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--dim);
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(20, 20, 40, 0.9);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s var(--ease-out);
+}
+
+.opt small {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.opt:hover,
+.opt:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.opt:active {
+  transform: scale(0.97);
+}
+
+.opt[aria-checked="true"] {
+  color: var(--bg);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--accent-2)));
+  border-color: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--sw, var(--accent));
+  box-shadow: 0 0 6px var(--sw, var(--accent)), inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  flex: none;
+}
+
+.sw.rainbow {
+  background: conic-gradient(#ff4d5e, #ffe14d, #39ff88, #22e4ff, #4d7cff, #b26bff, #ff4d5e);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+
 .footer {
   padding: 12px 16px 16px;
   text-align: center;
@@ -248,8 +564,32 @@ button {
   }
 
   .tool-btn {
-    padding: 5px 8px;
-    font-size: 12px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  .toolbar {
+    gap: 6px;
+  }
+
+  /* Dar ekranda üst çubuk düğmeleri yalnızca simge gösterir (erişilebilir ad aria-label'da). */
+  .tool-btn .lbl {
+    display: none;
+  }
+
+  .settings-panel {
+    top: auto;
+    left: 0;
+    width: 100%;
+    max-height: 82vh;
+    border-left: 0;
+    border-top: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+    border-radius: 16px 16px 0 0;
+    transform: translateY(104%);
+  }
+
+  .settings-head .tool-btn .lbl {
+    display: inline;
   }
 
   /* Menü tek satırda yatay kaydırılır. */
@@ -276,8 +616,37 @@ button {
   }
 }
 
+/*
+ * Hareketi azalt: kayma, ölçek ve bulanıklık animasyonları kapanır; geçişler yalnızca
+ * solma (opaklık) ve renk değişimi olarak kalır — ekran değişimi yine fark edilir ama hareket etmez.
+ */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  * {
-    transition: none !important;
+  .stage.entering .game-title,
+  .stage.entering .game-description,
+  .stage.entering .game-controls {
+    animation-name: fade-in;
+  }
+
+  .settings-panel {
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .settings.open .settings-panel {
+    opacity: 1;
+  }
+
+  .menu-btn:hover,
+  .menu-btn:focus-visible,
+  .tool-btn:active,
+  .opt:active {
+    transform: none;
   }
 }
