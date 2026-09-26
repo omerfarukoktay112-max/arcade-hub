@@ -14,8 +14,15 @@ export const tr = {
   'ui.language': 'Dil',
   'ui.controls': 'Kontroller',
   'ui.gamesNav': 'Oyunlar',
+  'ui.allGames': 'Tüm oyunlar',
+  'ui.chooseGame': 'Oyun seç',
+  'ui.fullscreen': 'Tam ekran',
+  'ui.exitFullscreen': 'Tam ekrandan çık',
+  'ui.rotateHint': 'Telefonu yan çevirince oyun alanı büyür',
+  'ui.bestShort': 'Rekor {n}',
   'ui.canvas': 'Oyun alanı',
   'ui.home': 'Arcade Hub ana oyun',
+  'ui.footerTouch': '⏸: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar ve ayarlar bu tarayıcıda saklanır',
   'ui.footer': 'P / Esc: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar ve ayarlar bu tarayıcıda saklanır',
   'ui.metaDescription': 'Sunucusuz, bağımlılıksız HTML5 retro arcade oyun kütüphanesi.',
   'ui.settingsTitle': '{game} · Ayarlar',
@@ -82,6 +89,7 @@ export const tr = {
 
   /* ---------- Snake ---------- */
   'snake.title': 'Yılan',
+  'snake.touchControls': 'Parmağını kaydır (swipe): yön değiştir',
   'snake.controls': 'Ok tuşları / WASD ile yön · Mobilde kaydır (swipe)',
   'snake.description': 'Yemleri topla, uza ve duvarlara ya da kuyruğuna çarpma. Her yemde yılan biraz hızlanır. Harita boyutu, renk ve elma sayısı ⚙ Ayarlar\'dan değişir.',
   'snake.length': 'UZUNLUK {n}',
@@ -93,6 +101,7 @@ export const tr = {
 
   /* ---------- 2048 ---------- */
   '2048.title': '2048',
+  '2048.touchControls': 'Kaydır (swipe): karoları kaydır',
   '2048.controls': 'Ok tuşları / WASD ile kaydır · Mobilde kaydır (swipe)',
   '2048.description': 'Aynı sayıları birleştirerek hedef karoya ulaş (4×4\'te 2048). Her hamlede yeni bir 2 ya da 4 gelir. Izgara boyutu ve Roma rakamları ⚙ Ayarlar\'da.',
   '2048.arabic': 'Klasik (2, 4, 8…)',
@@ -106,6 +115,7 @@ export const tr = {
 
   /* ---------- Minesweeper ---------- */
   'minesweeper.title': 'Mayın Tarlası',
+  'minesweeper.touchControls': 'Dokun: aç · Uzun bas: bayrak · Açık sayıya dokun: çevresini aç · Üstteki düğmeler: zorluk',
   'minesweeper.controls': 'Sol tık / dokun: aç · Sağ tık / uzun bas: bayrak · Açık sayıya tık: çevresini aç · 1/2/3: zorluk',
   'minesweeper.description': 'Mayınlara basmadan tüm güvenli hücreleri aç. İlk tıklama her zaman güvenlidir; en iyi süren saklanır.',
   'minesweeper.time': 'SÜRE',
@@ -116,6 +126,7 @@ export const tr = {
 
   /* ---------- Tetris ---------- */
   'tetris.title': 'Tetris',
+  'tetris.touchControls': 'Dokun: döndür · Yana sürükle: kaydır · Aşağı kaydır: sert düşür · Yukarı kaydır: tut',
   'tetris.controls': '←/→ kaydır · ↑ / X döndür · Z ters döndür · ↓ yavaş düşür · Space sert düşür · C tut · Mobil: dokun döndür, sürükle kaydır, aşağı kaydır düşür, yukarı kaydır tut',
   'tetris.description': 'Satırları tamamlayarak temizle. 1/2/3/4 satır: 100/300/500/800 × seviye. Her 10 satırda seviye ve hız artar.',
   'tetris.lines': 'SATIR',
@@ -124,12 +135,14 @@ export const tr = {
 
   /* ---------- Pong ---------- */
   'pong.title': 'Pong',
+  'pong.touchControls': 'Raket parmağını izler · İki oyuncuda ekranın sağ yarısı 2. oyuncunundur · Hazır ekranındaki düğmeler: oyuncu sayısı',
   'pong.controls': 'Oyuncu 1: W/S · Oyuncu 2: ↑/↓ (tek oyuncuda ↑/↓ de oyuncu 1) · 1/2: mod seçimi · Mobil: dokunduğun yere raket gider',
   'pong.description': 'Klasik Pong. Bilgisayara karşı ya da aynı klavyede iki kişi oyna; 7 sayıya ulaşan kazanır.',
   'pong.ready': '{n} sayıya ulaşan kazanır',
 
   /* ---------- Breakout ---------- */
   'breakout.title': 'Tuğla Kırıcı',
+  'breakout.touchControls': 'Parmağını sürükle: raket · Dokun: topu fırlat · Düşen kapsülleri raketle yakala',
   'breakout.controls': 'Fare / dokunma ya da ←/→ (A/D) ile raket · Space / tık / dokun: topu fırlat · Düşen kapsülleri raketle yakala',
   'breakout.description': 'Topu raketle karşıla ve tüm tuğlaları kır. Kırılan tuğlalardan güçlendirme düşer: ×3 çoklu top, ↔ geniş raket, ⇡ lazer, S yavaşlatıcı, F ateş topu, ♥ ek can.',
   'breakout.launch': 'Space / dokun ile fırlat',
@@ -146,6 +159,7 @@ export const tr = {
 
   /* ---------- Flappy ---------- */
   'flappy.title': 'Flappy Kuş',
+  'flappy.touchControls': 'Dokun: zıpla',
   'flappy.controls': 'Space / ↑ / tıkla / dokun: zıpla',
   'flappy.description': 'Boruların arasındaki boşluklardan geç. Her boru +1 puan; zemine ya da boruya çarpma. Kuşun rengi ve görünümü ⚙ Ayarlar\'da.',
   'flappy.skin.classic': 'Klasik',
@@ -157,6 +171,7 @@ export const tr = {
 
   /* ---------- Tic-Tac-Toe ---------- */
   'tictactoe.title': 'XOX',
+  'tictactoe.touchControls': 'Kareye dokun: işaret koy · Hazır/bitiş ekranındaki düğmeler: oyuncu sayısı ve zorluk',
   'tictactoe.controls': 'Tıkla / dokun ya da oklar + Enter ile işaret koy · 1/2: oyuncu sayısı · K/Z: kolay/zor',
   'tictactoe.description': 'Üç taşını yan yana diz. Tek oyunculu modda X sensin; zor seviyedeki bilgisayar yenilmez.',
   'tictactoe.ready': 'Mod ve zorluk seç',
@@ -165,12 +180,14 @@ export const tr = {
 
   /* ---------- Connect Four ---------- */
   'connect4.title': 'Dört Bağla',
+  'connect4.touchControls': 'Sütuna dokun: taşı bırak · Hazır/bitiş ekranındaki düğmeler: oyuncu sayısı',
   'connect4.controls': 'Fare / dokunma ile sütun seç ve bırak · ←/→ + Enter / Space · 1/2: oyuncu sayısı',
   'connect4.description': 'Dört taşını yatay, dikey ya da çapraz sırala. Tek oyunculu modda alfa-beta minimax kullanan bilgisayara karşı oynarsın.',
   'connect4.ready': 'Dört taşı sıraya diz',
 
   /* ---------- Lights Out ---------- */
   'lightsout.title': 'Işıkları Söndür',
+  'lightsout.touchControls': 'Dokun: ışığı ve komşularını çevir · Alttaki düğmeler: Sıfırla / İpucu',
   'lightsout.controls': 'Tıkla / dokun ya da oklar + Enter: ışığı ve komşularını çevir · R: seviyeyi sıfırla · H: ipucu',
   'lightsout.description': 'Tüm ışıkları söndür. Her tıklama hücreyi ve dört komşusunu çevirir; bulmacalar her zaman çözülebilirdir. 10 seviye.',
   'lightsout.reset': '↺ SIFIRLA',
@@ -184,6 +201,7 @@ export const tr = {
 
   /* ---------- Memory ---------- */
   'memory.title': 'Hafıza Eşleştirme',
+  'memory.touchControls': 'Karta dokun: çevir',
   'memory.controls': 'Tıkla / dokun ya da oklar + Enter ile kart çevir',
   'memory.description': 'Kartları çevirip aynı şekil ve renkteki çiftleri bul. Ne kadar az hamle, o kadar çok puan. Kart sayısı (zorluk) ⚙ Ayarlar\'da.',
   'memory.grid.easy': 'Kolay',
@@ -198,6 +216,7 @@ export const tr = {
 
   /* ---------- Life ---------- */
   'life.title': 'Hayat Oyunu',
+  'life.touchControls': 'Boş hücreden sürükle: çiz · Canlı hücreden sürükle: sil · Alttaki düğmeler: oynat, adım, rastgele, temizle, desen, hız',
   'life.controls': 'Space: oynat/duraklat · N: tek adım · C: temizle · R: rastgele · + / −: hız · 1-3: glider / pulsar / glider gun · Sürükle: çiz (sağ tık: sil) · Mobil: alt çubuktaki düğmeler',
   'life.description': 'Conway\'in hücresel otomatı: 2-3 komşulu hücre yaşar, tam 3 komşulu boş hücre doğar. Kenarlar sarmaldır (toroidal).',
   'life.running': '▶ ÇALIŞIYOR',

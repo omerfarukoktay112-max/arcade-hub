@@ -236,6 +236,14 @@ export class BaseGame {
     this.start();
   }
 
+  /**
+   * Oynanırken tam kare hızı gerekiyor mu? false ise Engine, girdi yokken ekranı daha seyrek
+   * çizer (CALM_FPS). Sıra tabanlı oyunlar yalnızca animasyon sürerken true döner.
+   */
+  needsFullRate() {
+    return this.state === 'playing';
+  }
+
   canPause() {
     return this.state === 'playing';
   }
@@ -302,6 +310,52 @@ export class BaseGame {
   }
 
   /* ---------- Metin ve çizim yardımcıları ---------- */
+
+  /**
+   * Önbellekli çizim (sprite): `paint(ctx)` yerel koordinatlarda (0..w, 0..h) yalnızca bir kez, ekran
+   * çözünürlüğündeki gizli bir canvas'a çizilir; sonraki karelerde kopyalanır (drawImage). Parlama
+   * (shadowBlur), kırpma ve çok parçalı yollar gibi her karede pahalı olan ama değişmeyen çizimler için.
+   * - `key` çizimi belirleyen HER şeyi içermeli (renk, boyut, durum). Ölçek anahtara otomatik eklenir.
+   * - `glow`: paint içindeki en büyük shadowBlur; kenar payı bundan hesaplanır ki parlama kesilmesin.
+   * - Mevcut dönüşüm ve globalAlpha kopyaya uygulanır (ör. Memory'deki kart çevirme).
+   * DOM yoksa (Node testleri) doğrudan çizer.
+   */
+  drawCached(key, x, y, w, h, glow, paint) {
+    const ctx = this.ctx;
+    const sprite = this._sprite(key, w, h, glow, paint);
+    if (sprite) {
+      ctx.drawImage(sprite.canvas, x - sprite.pad, y - sprite.pad, w + sprite.pad * 2, h + sprite.pad * 2);
+      return;
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    paint(ctx);
+    ctx.restore();
+  }
+
+  _sprite(key, w, h, glow, paint) {
+    if (typeof document === 'undefined') return null;
+    const scale = this.engine.scale || 1;
+    const id = `${key}@${scale}`;
+    const cache = (this._sprites ||= new Map());
+    let sprite = cache.get(id);
+    if (!sprite) {
+      if (cache.size > 256) cache.clear(); // ölçek değişimlerinde eski kopyalar birikmesin
+      // shadowBlur canvas pikseliyle ölçülür ve ~1,5 katı kadar yayılır; mantıksal piksele çevrilir.
+      const pad = glow ? Math.ceil((glow * 1.5) / scale) + 2 : 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.ceil((w + pad * 2) * scale));
+      canvas.height = Math.max(1, Math.ceil((h + pad * 2) * scale));
+      const sx = canvas.width / (w + pad * 2);
+      const sy = canvas.height / (h + pad * 2);
+      const g = canvas.getContext('2d');
+      g.setTransform(sx, 0, 0, sy, pad * sx, pad * sy);
+      paint(g);
+      sprite = { canvas, pad };
+      cache.set(id, sprite);
+    }
+    return sprite;
+  }
 
   formatScore(value) {
     return String(Math.floor(value));

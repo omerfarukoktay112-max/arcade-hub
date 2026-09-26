@@ -81,7 +81,10 @@ export class FlappyGame extends BaseGame {
     width: W,
     height: H,
     theme: [NEON.yellow, NEON.green],
+    touchSurface: true, // mobil oyun modunda canvas dışındaki dokunuşlar da oyuna gider
+    icon: '🐤',
     get controls() { return t('flappy.controls'); },
+    get touchControls() { return t('flappy.touchControls'); },
     get description() { return t('flappy.description'); },
   };
 

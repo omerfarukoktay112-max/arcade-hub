@@ -99,7 +99,10 @@ export class SnakeGame extends BaseGame {
     width: W,
     height: H,
     theme: [NEON.green, NEON.cyan],
+    touchSurface: true, // mobil oyun modunda canvas dışındaki dokunuşlar da oyuna gider
+    icon: '🐍',
     get controls() { return t('snake.controls'); },
+    get touchControls() { return t('snake.touchControls'); },
     get description() { return t('snake.description'); },
   };
 

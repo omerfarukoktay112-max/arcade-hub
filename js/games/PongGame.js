@@ -52,7 +52,9 @@ export class PongGame extends BaseGame {
     height: H,
     hasScore: false,
     theme: [NEON.text, NEON.cyan],
+    icon: '🏓',
     get controls() { return t('pong.controls'); },
+    get touchControls() { return t('pong.touchControls'); },
     get description() { return t('pong.description'); },
   };
 

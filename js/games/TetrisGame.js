@@ -157,7 +157,10 @@ export class TetrisGame extends BaseGame {
     width: 480,
     height: 600,
     theme: [NEON.cyan, NEON.purple],
+    touchSurface: true, // mobil oyun modunda canvas dışındaki dokunuşlar da oyuna gider
+    icon: '🧩',
     get controls() { return t('tetris.controls'); },
+    get touchControls() { return t('tetris.touchControls'); },
     get description() { return t('tetris.description'); },
   };
 

@@ -5,10 +5,11 @@
 A serverless, dependency-free retro arcade game library that runs in the browser. 12 classic games with a dark, neon-accented interface. All graphics are drawn in code on a canvas and all sounds are generated with Web Audio. There is no build step, npm package, framework or CDN: just put the files on GitHub Pages as they are.
 
 - Plain HTML + CSS + vanilla JavaScript (ES modules)
-- Desktop (keyboard/mouse) and mobile (tap, swipe, long press) support
+- Desktop (keyboard/mouse) and mobile (tap, swipe, long press) support. On phones the game menu becomes a single bar that opens a game picker with all 12 games (it opens by itself on first visit), buttons are at least 44 px, and the canvas is sized to the visible screen height. Once you start playing, the header hides and only a slim bar (name, full screen, pause) stays so the board gets bigger; wide games (Pong, Life) suggest turning the phone sideways
 - Crisp rendering on HiDPI/Retina displays
 - High scores, game settings and language preference are stored in the browser's `localStorage`
 - Direct links such as `#tetris`
+- **Installable and offline:** add it to the home screen as an app (web app manifest); after the first visit it also opens without a connection (service worker, network-first so updates show up immediately)
 - **Multilingual:** Turkish and English (the 🌐 selector in the top bar). Game names, buttons, rules and all text drawn on the canvas switch instantly, without restarting the game. On first visit the browser language is used (Turkish if it is neither)
 - **Game settings (⚙):** settings panel for Snake, 2048, Breakout, Flappy Bird and Memory Match; the *⚙ Settings* button on the ready screen (O key) opens it too
 - **Per-game theme:** top bar buttons, menu, title and canvas glow take on each game's own color palette
@@ -62,7 +63,9 @@ node tests/logic.test.mjs     # 68 pure logic tests (2048 merging/sizes/Roman, T
 node tests/browser-smoke.mjs  # headless Chrome/Edge: opens all 12 games by hash and menu, plays them with real
                               # keyboard/mouse/touch events, fast game switching, 375px mobile layout, language
                               # switching, theme, settings panel, game-over overflow check for every game and
-                              # language; fails on any console error
+                              # language, frame-rate policy, mobile game picker, play mode, swipe direction
+                              # lock, touch texts, PWA (installable, opens with the server stopped);
+                              # fails on any console error
 ```
 
 To test the deployed site: `node tests/browser-smoke.mjs --url https://<user>.github.io/arcade-hub/`. The browser test finds Chrome/Edge on its own (it can also be set with `CHROME_PATH`); it is skipped if no browser is found. `--shots <folder>` saves a screenshot of every game.
@@ -95,6 +98,8 @@ All paths are relative, so it works in a subdirectory without changes. The empty
        width: 600, height: 600,   // logical resolution
        theme: [NEON.cyan, NEON.pink],                      // top bar / menu colors
        get controls() { return t('new.controls'); },
+       get touchControls() { return t('new.touchControls'); },   // shown on touch devices
+       icon: '🎮',                                         // shown in the mobile game picker
        get description() { return t('new.description'); },
      };
 
@@ -135,6 +140,8 @@ Rules: input is read only from `this.input`, no listeners or `setTimeout` are ad
 ```
 arcade-hub/
 ├── index.html            # single page; the game list is not written in the HTML
+├── manifest.webmanifest  # installable web app (icon is an inline SVG, no image files)
+├── sw.js                 # service worker: network-first, cache fallback for offline use
 ├── .nojekyll
 ├── css/style.css
 ├── js/

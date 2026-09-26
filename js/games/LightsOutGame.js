@@ -117,7 +117,9 @@ export class LightsOutGame extends BaseGame {
     width: W,
     height: H,
     theme: ['#00ffd0', NEON.yellow],
+    icon: '💡',
     get controls() { return t('lightsout.controls'); },
+    get touchControls() { return t('lightsout.touchControls'); },
     get description() { return t('lightsout.description'); },
   };
 
@@ -140,6 +142,10 @@ export class LightsOutGame extends BaseGame {
     this.hints = 0;
     this.hintCell = -1;
     this.cleared = 0; // seviye bitişi sonrası bekleme sayacı
+  }
+
+  needsFullRate() {
+    return false;
   }
 
   update(dt) {
@@ -243,12 +249,15 @@ export class LightsOutGame extends BaseGame {
       ctx.fillStyle = '#12122a';
       ctx.fill();
       if (g > 0.02) {
+        // Parlayan hücre önbellekten; parlaklık yalnızca globalAlpha ile değişir.
         ctx.globalAlpha = g;
-        ctx.fillStyle = NEON.yellow;
-        ctx.shadowColor = NEON.yellow;
-        ctx.shadowBlur = 24;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        this.drawCached('lo-lit', x, y, CELL, CELL, 24, (c) => {
+          roundRect(c, 0, 0, CELL, CELL, 12);
+          c.fillStyle = NEON.yellow;
+          c.shadowColor = NEON.yellow;
+          c.shadowBlur = 24;
+          c.fill();
+        });
         ctx.globalAlpha = g * 0.9;
         ctx.fillStyle = '#fff6c2';
         roundRect(ctx, x + CELL * 0.3, y + CELL * 0.3, CELL * 0.4, CELL * 0.4, 8);

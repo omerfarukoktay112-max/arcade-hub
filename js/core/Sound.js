@@ -12,6 +12,11 @@ export class Sound {
 
   /** Engine her tuş/dokunuşta çağırır; ilk seferde ses bağlamını açar. */
   unlock() {
+    // Tarayıcı ses izni ancak "kullanıcı etkileşimi"nden sonra verir. Dokunmada bu parmak kalkınca
+    // (pointerup/touchend) oluşur, pointerdown'da değil; Esc tuşu da sayılmaz. İzin yokken bağlam
+    // kurulursa askıda doğar ve konsola uyarı düşer; destekleyen tarayıcıda izni bekle.
+    const activation = globalThis.navigator?.userActivation;
+    if (activation && !activation.hasBeenActive) return;
     if (!this.ctx) {
       const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
       if (!AC) return;

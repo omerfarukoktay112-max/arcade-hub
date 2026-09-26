@@ -1,4 +1,4 @@
-import { BaseGame, NEON, HUD_HEIGHT, roundRect, shuffle } from '../core/BaseGame.js';
+import { BaseGame, NEON, HUD_HEIGHT, FONT, roundRect, shuffle } from '../core/BaseGame.js';
 import { t } from '../core/I18n.js';
 
 const W = 600;
@@ -62,7 +62,9 @@ export class MemoryGame extends BaseGame {
     width: W,
     height: H,
     theme: [NEON.purple, NEON.pink],
+    icon: '🃏',
     get controls() { return t('memory.controls'); },
+    get touchControls() { return t('memory.touchControls'); },
     get description() { return t('memory.description'); },
   };
 
@@ -100,6 +102,10 @@ export class MemoryGame extends BaseGame {
     this.elapsed = 0;
     this.cursor = 0;
     this.showCursor = false;
+  }
+
+  needsFullRate() {
+    return this.lockTimer > 0;
   }
 
   update(dt) {
@@ -191,8 +197,7 @@ export class MemoryGame extends BaseGame {
     return c;
   }
 
-  drawShape(shape, cx, cy, s, color) {
-    const ctx = this.ctx;
+  drawShape(shape, cx, cy, s, color, ctx = this.ctx) {
     ctx.save();
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
@@ -269,35 +274,45 @@ export class MemoryGame extends BaseGame {
       ctx.translate(cx, y + CARD / 2);
       ctx.scale(Math.max(0.02, scaleX), 1);
       ctx.translate(-cx, -(y + CARD / 2));
-      roundRect(ctx, x, y, CARD, CARD, radius);
+      // Kart yüzleri ve sırtı önbellekten (parlamalı şekil, kırpma ve tarama çizgileri her karede pahalı).
       if (faceUp) {
-        ctx.fillStyle = '#0e0e22';
-        ctx.fill();
         const face = faceOf(card.face);
         const color = COLORS[face.color];
-        ctx.strokeStyle = card.matched ? color : 'rgba(236, 235, 255, 0.35)';
-        ctx.lineWidth = card.matched ? 3 : 2;
-        ctx.stroke();
-        this.drawShape(SHAPES[face.shape], cx, y + CARD / 2, CARD * 0.5, color);
+        this.drawCached(`mem-face:${card.face}:${card.matched ? 1 : 0}:${CARD}`, x, y, CARD, CARD, 16, (g) => {
+          roundRect(g, 0, 0, CARD, CARD, radius);
+          g.fillStyle = '#0e0e22';
+          g.fill();
+          g.strokeStyle = card.matched ? color : 'rgba(236, 235, 255, 0.35)';
+          g.lineWidth = card.matched ? 3 : 2;
+          g.stroke();
+          this.drawShape(SHAPES[face.shape], CARD / 2, CARD / 2, CARD * 0.5, color, g);
+        });
       } else {
-        ctx.fillStyle = '#1b1240';
-        ctx.fill();
-        ctx.save();
-        ctx.clip();
-        ctx.strokeStyle = 'rgba(178, 107, 255, 0.25)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let k = -CARD; k < CARD * 2; k += 16) {
-          ctx.moveTo(x + k, y);
-          ctx.lineTo(x + k + CARD, y + CARD);
-        }
-        ctx.stroke();
-        ctx.restore();
-        roundRect(ctx, x, y, CARD, CARD, radius);
-        ctx.strokeStyle = NEON.purple;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        this.text('?', cx, y + CARD / 2 + 2, { size: Math.round(CARD / 3), color: 'rgba(178, 107, 255, 0.8)' });
+        this.drawCached(`mem-back:${CARD}`, x, y, CARD, CARD, 0, (g) => {
+          roundRect(g, 0, 0, CARD, CARD, radius);
+          g.fillStyle = '#1b1240';
+          g.fill();
+          g.save();
+          g.clip();
+          g.strokeStyle = 'rgba(178, 107, 255, 0.25)';
+          g.lineWidth = 2;
+          g.beginPath();
+          for (let k = -CARD; k < CARD * 2; k += 16) {
+            g.moveTo(k, 0);
+            g.lineTo(k + CARD, CARD);
+          }
+          g.stroke();
+          g.restore();
+          roundRect(g, 0, 0, CARD, CARD, radius);
+          g.strokeStyle = NEON.purple;
+          g.lineWidth = 2;
+          g.stroke();
+          g.font = `700 ${Math.round(CARD / 3)}px ${FONT}`;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillStyle = 'rgba(178, 107, 255, 0.8)';
+          g.fillText('?', CARD / 2, CARD / 2 + 2);
+        });
       }
       ctx.restore();
 

@@ -6,6 +6,12 @@
   <title>Arcade Hub</title>
   <meta name="description" content="Sunucusuz, bağımlılıksız HTML5 retro arcade oyun kütüphanesi." data-i18n-content="ui.metaDescription">
   <meta name="theme-color" content="#07070d">
+  <!-- Ana ekrana eklenebilir uygulama (PWA): manifest + sw.js (çevrimdışı çalışma) -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Arcade Hub">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2307070d'/%3E%3Cpath d='M3 11h10M5 5h2v2H5zM9 5h2v2H9z' stroke='%2322e4ff' stroke-width='1.5' fill='%23ff2e88'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./css/style.css">
   <script type="module" src="./js/app.js"></script>
@@ -32,18 +38,46 @@
   </header>
 
   <nav id="game-menu" class="menu" aria-label="Oyunlar" data-i18n-aria="ui.gamesNav"></nav>
+  <!-- Mobil: yatay menü yerine geçerli oyunu gösteren ve oyun seçiciyi açan düğme -->
+  <button id="game-bar" class="game-bar" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker">
+    <span id="game-bar-icon" class="game-bar-icon" aria-hidden="true"></span>
+    <span id="game-bar-title" class="game-bar-title"></span>
+    <span class="game-bar-hint"><span data-i18n="ui.allGames">Tüm oyunlar</span> <span aria-hidden="true">▾</span></span>
+  </button>
 
   <main class="stage">
     <h1 id="game-title" class="game-title">Arcade Hub</h1>
+    <!-- Mobil oyun modu: oynarken üst çubuk yerine görünen ince şerit -->
+    <div id="play-bar" class="play-bar">
+      <span id="play-bar-icon" class="play-bar-icon" aria-hidden="true"></span>
+      <span id="play-bar-title" class="play-bar-title"></span>
+      <button id="play-fs" class="tool-btn" type="button" hidden><span class="ico" aria-hidden="true">⛶</span><span class="lbl"></span></button>
+      <button id="play-pause" class="tool-btn" type="button"><span class="ico" aria-hidden="true">⏸</span><span class="lbl"></span></button>
+    </div>
     <div class="canvas-wrap">
       <canvas id="game-canvas" width="600" height="600" aria-label="Oyun alanı" data-i18n-aria="ui.canvas"></canvas>
     </div>
+    <p class="rotate-hint"><span aria-hidden="true">📱↻</span> <span data-i18n="ui.rotateHint">Telefonu yan çevirince oyun alanı büyür</span></p>
     <p id="game-description" class="game-description"></p>
     <p class="game-controls"><span class="kbd-label" data-i18n="ui.controls">Kontroller</span> <span id="game-controls"></span></p>
     <noscript><p class="notice">Arcade Hub çalışmak için JavaScript gerektirir. · Arcade Hub needs JavaScript.</p></noscript>
   </main>
 
-  <footer class="footer" data-i18n="ui.footer">P / Esc: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar ve ayarlar bu tarayıcıda saklanır</footer>
+  <footer class="footer" data-i18n="ui.footer" data-i18n-touch="ui.footerTouch">P / Esc: duraklat · Tüm grafikler canvas ile koddan çizilir · Rekorlar ve ayarlar bu tarayıcıda saklanır</footer>
+
+  <!-- Oyun seçici (mobilde alttan açılan sayfa): kartlar app.js tarafından GAMES'ten üretilir. -->
+  <div id="picker" class="settings picker" aria-hidden="true">
+    <div class="settings-backdrop" data-close></div>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+      <header class="settings-head">
+        <h2 id="picker-title" class="settings-title" data-i18n="ui.chooseGame">Oyun seç</h2>
+        <button class="tool-btn" type="button" data-close>
+          <span class="ico" aria-hidden="true">✕</span><span class="lbl" data-i18n="ui.close">Kapat</span>
+        </button>
+      </header>
+      <div id="picker-grid" class="settings-body picker-grid"></div>
+    </section>
+  </div>
 
   <!-- Oyun ayarları paneli: içerik, oyunun `static settings` şemasından app.js tarafından üretilir. -->
   <div id="settings" class="settings" aria-hidden="true">

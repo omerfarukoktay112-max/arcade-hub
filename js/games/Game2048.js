@@ -155,7 +155,10 @@ export class Game2048 extends BaseGame {
     width: 500,
     height: 500,
     theme: [NEON.orange, NEON.yellow],
+    touchSurface: true, // mobil oyun modunda canvas dışındaki dokunuşlar da oyuna gider
+    icon: '🔢',
     get controls() { return t('2048.controls'); },
+    get touchControls() { return t('2048.touchControls'); },
     get description() { return t('2048.description'); },
   };
 
@@ -219,6 +222,10 @@ export class Game2048 extends BaseGame {
     if (i.wasPressed('ArrowLeft', 'KeyA') || i.swipe === 'left') return 'left';
     if (i.wasPressed('ArrowRight', 'KeyD') || i.swipe === 'right') return 'right';
     return null;
+  }
+
+  needsFullRate() {
+    return !!this.slide || this.effects.length > 0;
   }
 
   animate(dt) {

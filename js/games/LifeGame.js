@@ -103,7 +103,9 @@ export class LifeGame extends BaseGame {
     height: H,
     hasScore: false,
     theme: ['#9dff3d', NEON.cyan],
+    icon: '🧬',
     get controls() { return t('life.controls'); },
+    get touchControls() { return t('life.touchControls'); },
     get description() { return t('life.description'); },
   };
 
@@ -170,6 +172,10 @@ export class LifeGame extends BaseGame {
   flash(msg) {
     this.message = msg;
     this.messageT = 1.2;
+  }
+
+  needsFullRate() {
+    return this.running;
   }
 
   update(dt) {
@@ -346,13 +352,16 @@ export class LifeGame extends BaseGame {
       [NEON.green, (a) => a > 2 && a <= 12],
       [NEON.purple, (a) => a > 12],
     ];
+    // Her renk tek bir yol olarak doldurulur: binlerce fillRect yerine 3 çizim çağrısı.
     for (const [color, test] of buckets) {
       ctx.fillStyle = color;
+      ctx.beginPath();
       for (let i = 0; i < this.cells.length; i++) {
         if (this.cells[i] && test(this.age[i])) {
-          ctx.fillRect((i % COLS) * CELL + 1, Math.floor(i / COLS) * CELL + 1, CELL - 2, CELL - 2);
+          ctx.rect((i % COLS) * CELL + 1, Math.floor(i / COLS) * CELL + 1, CELL - 2, CELL - 2);
         }
       }
+      ctx.fill();
     }
   }
 

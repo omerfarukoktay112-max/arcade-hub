@@ -160,7 +160,10 @@ export class BreakoutGame extends BaseGame {
     width: W,
     height: H,
     theme: [NEON.pink, NEON.orange],
+    touchSurface: true, // mobil oyun modunda canvas dışındaki dokunuşlar da oyuna gider
+    icon: '🧱',
     get controls() { return t('breakout.controls'); },
+    get touchControls() { return t('breakout.touchControls'); },
     get description() { return t('breakout.description'); },
   };
 

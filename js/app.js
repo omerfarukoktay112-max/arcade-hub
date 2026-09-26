@@ -52,8 +52,18 @@ const settingsEl = $('settings');
 const settingsTitle = $('settings-title');
 const settingsBody = $('settings-body');
 const settingsReset = $('settings-reset');
+const gameBar = $('game-bar');
+const gameBarIcon = $('game-bar-icon');
+const gameBarTitle = $('game-bar-title');
+const pickerEl = $('picker');
+const pickerGrid = $('picker-grid');
+const playBarIcon = $('play-bar-icon');
+const playBarTitle = $('play-bar-title');
+const playPause = $('play-pause');
+const playFs = $('play-fs');
+const rootEl = document.documentElement;
 
-const engine = new Engine(canvas, { onChange: syncToolbar, onOpenSettings: openSettings });
+const engine = new Engine(canvas, { onChange: onEngineChange, onOpenSettings: openSettings });
 const storage = engine.storage;
 const buttons = new Map();
 
@@ -89,6 +99,155 @@ function findGame(id) {
   return GAMES.find((G) => G.meta.id === id);
 }
 
+/* ---------- Mobil oyun modu ---------- */
+
+/**
+ * Mobilde oyun oynanırken üst çubuk, oyun çubuğu ve metinler gizlenir; canvas'ın üstünde yalnızca
+ * ince bir şerit (ad + tam ekran + duraklat) kalır → canvas büyür. Duraklatınca, oyun bitince ya da
+ * bir panel açılınca normal görünüme dönülür. Yalnızca kullanıcı bu oyunda canvas'a dokunduktan
+ * sonra devreye girer (Life gibi hep "oynanan" oyunlar açılır açılmaz arayüzü gizlemesin).
+ */
+let engaged = false;
+canvas.addEventListener('pointerdown', () => {
+  engaged = true;
+}, true);
+engine.input.setSurface(stage);
+
+function syncPlayMode() {
+  const g = engine.game;
+  const on = compactQuery.matches && engaged && !!g && g.state === 'playing' && !engine.paused && !engine.suspended;
+  // Swipe/sürükleme oyunlarında canvas'ın altındaki boş alan da dokunma yüzeyi olur.
+  const surface = on && !!g.meta.touchSurface;
+  engine.input.surfaceEnabled = surface;
+  rootEl.classList.toggle('touch-surface', surface);
+  if (rootEl.classList.contains('play-mode') === on) return;
+  rootEl.classList.toggle('play-mode', on);
+  if (on) window.scrollTo(0, 0);
+  fitMinHeight = Infinity;
+  queueFit();
+}
+
+function onEngineChange() {
+  syncToolbar();
+  syncPlayMode();
+}
+
+playPause.addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  engine.togglePause();
+  syncToolbar();
+});
+
+/* ---------- Tam ekran ---------- */
+
+const fullscreenOk = !!(document.fullscreenEnabled && rootEl.requestFullscreen);
+playFs.hidden = !fullscreenOk; // iPhone Safari sayfa için tam ekranı desteklemez
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    await rootEl.requestFullscreen({ navigationUI: 'hide' });
+    // Yatay oyunlarda ekranı yatay kilitle (Android; desteklenmiyorsa sessizce geç).
+    const wide = engine.width > engine.height * 1.2;
+    await screen.orientation?.lock?.(wide ? 'landscape' : 'portrait').catch(() => {});
+  } catch {
+    /* kullanıcı reddetti ya da desteklenmiyor */
+  }
+}
+
+playFs.addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  toggleFullscreen();
+});
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) screen.orientation?.unlock?.();
+  syncToolbar();
+  fitMinHeight = Infinity;
+  queueFit();
+});
+
+/* ---------- Oyun seçici (mobil) ---------- */
+
+const picks = new Map();
+const isPickerOpen = () => pickerEl.classList.contains('open');
+
+function buildPicker() {
+  const frag = document.createDocumentFragment();
+  for (const Game of GAMES) {
+    const { id, icon } = Game.meta;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pick';
+    btn.dataset.id = id;
+    const [a, b] = themeOf(Game);
+    btn.style.setProperty('--pa', a);
+    btn.style.setProperty('--pb', b);
+    const ico = document.createElement('span');
+    ico.className = 'pick-icon';
+    ico.setAttribute('aria-hidden', 'true');
+    ico.textContent = icon;
+    const name = document.createElement('span');
+    name.className = 'pick-name';
+    const best = document.createElement('span');
+    best.className = 'pick-best';
+    btn.append(ico, name, best);
+    btn.addEventListener('click', () => {
+      closePicker(false);
+      if (location.hash.slice(1) !== id) location.hash = id;
+    });
+    picks.set(id, btn);
+    frag.appendChild(btn);
+  }
+  pickerGrid.appendChild(frag);
+}
+
+/** Kart metinleri: oyun adı ve (puanlı oyunlarda) varsayılan ayardaki rekor. */
+function renderPicker() {
+  const current = engine.game?.meta.id;
+  for (const Game of GAMES) {
+    const { id, title, hasScore, lowerIsBetter } = Game.meta;
+    const btn = picks.get(id);
+    btn.querySelector('.pick-name').textContent = title;
+    const best = hasScore === false || lowerIsBetter ? null : storage.getBest(id);
+    btn.querySelector('.pick-best').textContent = best ? t('ui.bestShort', { n: best }) : '';
+    if (id === current) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
+  }
+}
+
+function openPicker() {
+  if (isPickerOpen()) return;
+  closeSettings(false);
+  lastFocus = document.activeElement;
+  renderPicker();
+  engine.setSuspended(true);
+  pickerEl.classList.add('open');
+  pickerEl.setAttribute('aria-hidden', 'false');
+  gameBar.setAttribute('aria-expanded', 'true');
+  (pickerGrid.querySelector('[aria-current="page"]') || pickerGrid.querySelector('button'))?.focus();
+}
+
+function closePicker(restoreFocus = true) {
+  if (!isPickerOpen()) return;
+  pickerEl.classList.remove('open');
+  pickerEl.setAttribute('aria-hidden', 'true');
+  gameBar.setAttribute('aria-expanded', 'false');
+  engine.setSuspended(false);
+  syncToolbar();
+  if (restoreFocus && lastFocus && lastFocus !== document.body) lastFocus.focus?.();
+  else document.activeElement?.blur?.();
+  lastFocus = null;
+}
+
+gameBar.addEventListener('click', () => openPicker());
+pickerEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]')) closePicker();
+});
+
 /* ---------- Tema ve geçiş ---------- */
 
 /** Üst çubuk, menü ve sahne oyunun tema renklerini alır (CSS'te @property ile yumuşak geçiş). */
@@ -107,6 +266,47 @@ function playStageEnter() {
   stage.classList.add('entering');
 }
 
+/* ---------- Görünür yükseklik ---------- */
+
+const canvasWrap = document.querySelector('.canvas-wrap');
+const compactQuery = window.matchMedia('(max-width: 640px), (pointer: coarse)'); // CSS'teki mobil düzenle uyumlu
+let fitQueued = false;
+let fitWidth = 0;
+let fitMinHeight = Infinity;
+
+/**
+ * Canvas'ın sığması gereken yüksekliği --avail-h olarak yazar: görünür pencere yüksekliği − canvas'ın
+ * sayfadaki üst konumu. 75vh mobilde tarayıcı çubuklarını hesaba katmaz ve üstteki çubuk/menü
+ * yüksekliği cihaza göre değişir; bu yüzden ölçülür. Masaüstünde eskisi gibi en fazla %75.
+ * Mobilde aynı genişlikte görülen EN KÜÇÜK yükseklik kullanılır (svh gibi): kaydırırken adres çubuğu
+ * açılıp kapandıkça canvas zıplamaz.
+ */
+function fitStage() {
+  fitQueued = false;
+  const vw = window.innerWidth;
+  let vh = window.innerHeight;
+  const compact = compactQuery.matches;
+  if (compact) {
+    if (vw !== fitWidth) fitMinHeight = Infinity; // yön değişti
+    fitWidth = vw;
+    fitMinHeight = Math.min(fitMinHeight, vh);
+    vh = fitMinHeight;
+  }
+  const top = canvasWrap.getBoundingClientRect().top + window.scrollY;
+  const room = vh - top - 12;
+  const h = compact ? room : Math.min(vh * 0.75, room);
+  document.documentElement.style.setProperty('--avail-h', `${Math.max(220, Math.floor(h))}px`);
+  // Yatay oyun (Pong, Life, zor Minesweeper): dikey telefonda "yan çevir" ipucu gösterilir.
+  if (engine.width > engine.height * 1.2) rootEl.dataset.wide = '';
+  else delete rootEl.dataset.wide;
+}
+
+function queueFit() {
+  if (fitQueued) return;
+  fitQueued = true;
+  requestAnimationFrame(fitStage);
+}
+
 /* ---------- Yönlendirme ---------- */
 
 function route() {
@@ -120,6 +320,8 @@ function route() {
   if (engine.game && engine.game.constructor === Game) return;
 
   closeSettings(false);
+  closePicker(false);
+  engaged = false;
   engine.loadGame(Game);
   applyTheme(Game);
   renderGameText();
@@ -138,15 +340,26 @@ function route() {
   syncToolbar();
 }
 
+/**
+ * Dokunmatik cihaz (fare/hover yok): kontrol satırı ve alt bilgi klavye yerine dokunma hareketlerini
+ * anlatır (meta.touchControls, data-i18n-touch). Dokunmatik ekranlı ama fareli dizüstünde klavye metni kalır.
+ */
+const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
+
 /** Geçerli dile göre oyun adı, açıklama, kontroller ve menü etiketleri. */
 function renderGameText() {
   for (const Game of GAMES) buttons.get(Game.meta.id).textContent = Game.meta.title;
   const Game = engine.game?.constructor;
   if (!Game) return;
-  const { title, description, controls } = Game.meta;
+  const { title, description, controls, touchControls, icon } = Game.meta;
   titleEl.textContent = title;
+  gameBarTitle.textContent = title;
+  gameBarIcon.textContent = icon;
+  gameBar.setAttribute('aria-label', `${title} · ${t('ui.allGames')}`);
+  playBarTitle.textContent = title;
+  playBarIcon.textContent = icon;
   descEl.textContent = description;
-  controlsEl.textContent = controls;
+  controlsEl.textContent = touchQuery.matches ? touchControls : controls;
   document.title = `${title} · Arcade Hub`;
 }
 
@@ -164,6 +377,9 @@ function syncToolbar() {
   const muted = engine.sound.muted;
   setToolButton(muteBtn, muted ? '🔇' : '🔊', muted ? t('ui.soundOff') : t('ui.soundOn'));
   muteBtn.setAttribute('aria-pressed', String(muted));
+  setToolButton(playPause, engine.paused ? '▶' : '⏸', engine.paused ? t('ui.resume') : t('ui.pause'));
+  const fs = !!document.fullscreenElement;
+  setToolButton(playFs, fs ? '✕' : '⛶', fs ? t('ui.exitFullscreen') : t('ui.fullscreen'));
   const hasSettings = !!engine.game?.constructor.settings.length;
   settingsBtn.disabled = !hasSettings;
   setToolButton(settingsBtn, '⚙', t('ui.settings'));
@@ -209,12 +425,14 @@ function applyLang() {
   const langName = LANGS.find((l) => l.code === lang)?.name || lang;
   langSelect.title = `${t('ui.language')}: ${langName}`;
   langSelect.setAttribute('aria-label', t('ui.language'));
-  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  const touch = touchQuery.matches;
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(touch && el.dataset.i18nTouch ? el.dataset.i18nTouch : el.dataset.i18n);
   for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
   for (const el of document.querySelectorAll('[data-i18n-content]')) el.setAttribute('content', t(el.dataset.i18nContent));
   renderGameText();
   syncToolbar();
   if (isSettingsOpen()) renderSettings();
+  if (isPickerOpen()) renderPicker();
 }
 
 function initLang() {
@@ -222,6 +440,7 @@ function initLang() {
   const code = isSupported(saved) ? saved : detectLang(navigator.languages || [navigator.language]);
   setLang(code);
   onLangChange(applyLang);
+  touchQuery.addEventListener?.('change', applyLang);
   applyLang();
 }
 
@@ -339,13 +558,15 @@ settingsEl.addEventListener('click', (e) => {
   if (e.target.closest('[data-close]')) closeSettings();
 });
 
-// Panel açıkken Esc paneli kapatır; tuş oyuna/Engine'e ulaşmaz (Esc aksi halde duraklatmayı değiştirirdi).
+// Panel (ayarlar ya da oyun seçici) açıkken Esc paneli kapatır; tuş oyuna/Engine'e ulaşmaz
+// (Esc aksi halde duraklatmayı değiştirirdi).
 window.addEventListener('keydown', (e) => {
-  if (!isSettingsOpen()) return;
+  if (!isSettingsOpen() && !isPickerOpen()) return;
   if (e.code === 'Escape') {
     e.preventDefault();
     e.stopImmediatePropagation();
-    closeSettings();
+    if (isPickerOpen()) closePicker();
+    else closeSettings();
   } else if (e.code !== 'Tab') {
     e.stopImmediatePropagation(); // Enter/Space/oklar yalnızca paneldeki düğmeler içindir
   }
@@ -353,12 +574,38 @@ window.addEventListener('keydown', (e) => {
 
 /* ---------- Başlat ---------- */
 
+// İlk açılışta hash yoksa mobilde oyun seçici açılır: 12 oyunun varlığı hemen görünsün.
+const firstVisitNoHash = !location.hash;
+
 buildMenu();
+buildPicker();
 buildLangSelect();
 initLang();
 window.addEventListener('hashchange', route);
 route();
 syncToolbar();
+fitStage();
+if (firstVisitNoHash && compactQuery.matches) openPicker();
+window.addEventListener('resize', queueFit);
+window.addEventListener('orientationchange', queueFit);
+// Üst çubuk/menü/başlık yüksekliği değişirse (dil, satır kaydırma, yazı tipi yüklenmesi) yeniden hesapla.
+if (typeof ResizeObserver !== 'undefined') {
+  const ro = new ResizeObserver(queueFit);
+  for (const el of [document.querySelector('.topbar'), menu, gameBar, titleEl, canvas]) ro.observe(el);
+}
+
+/* ---------- Çevrimdışı çalışma (PWA) ---------- */
+
+// Service worker ilk ziyarette sayfa yüklendikten SONRA devreye girer; o ana kadar yüklenen dosyaları
+// (sayfa, CSS, tüm modüller) ona bildiririz ki ilk ziyaretten sonra site çevrimdışı da açılsın.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
+    const urls = [location.href.split('#')[0], ...performance.getEntriesByType('resource').map((e) => e.name)];
+    reg.active?.postMessage({ type: 'cache', urls });
+  }).catch(() => {
+    /* desteklenmiyor ya da engellendi: site yine çevrimiçi çalışır */
+  });
+}
 
 // Hata ayıklama ve otomatik testler için (konsoldan: arcadeHub.engine.game)
-window.arcadeHub = { engine, games: GAMES, openSettings, closeSettings, setLang };
+window.arcadeHub = { engine, games: GAMES, openSettings, closeSettings, openPicker, closePicker, setLang, toggleFullscreen };

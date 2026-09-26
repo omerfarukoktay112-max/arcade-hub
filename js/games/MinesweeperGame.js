@@ -144,9 +144,11 @@ export class MinesweeperGame extends BaseGame {
     width: sizeFor(DIFFICULTIES.easy).width,
     height: sizeFor(DIFFICULTIES.easy).height,
     get controls() { return t('minesweeper.controls'); },
+    get touchControls() { return t('minesweeper.touchControls'); },
     get description() { return t('minesweeper.description'); },
     get scoreLabel() { return t('minesweeper.time'); },
     theme: [NEON.red, NEON.cyan],
+    icon: '💣',
     lowerIsBetter: true,
     recordOnWin: true,
   };
@@ -220,6 +222,11 @@ export class MinesweeperGame extends BaseGame {
     const r = Math.floor((y - TOP) / cell);
     if (r < 0 || c < 0 || r >= rows || c >= cols) return null;
     return { r, c };
+  }
+
+  /** Süre sayacı saniyede bir değişir; tıklama animasyonları girdi penceresinde tam hızda. */
+  needsFullRate() {
+    return false;
   }
 
   update(dt) {

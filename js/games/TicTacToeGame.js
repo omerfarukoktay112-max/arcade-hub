@@ -90,7 +90,9 @@ export class TicTacToeGame extends BaseGame {
     height: H,
     hasScore: false,
     theme: ['#ff66ff', NEON.cyan],
+    icon: '⭕',
     get controls() { return t('tictactoe.controls'); },
+    get touchControls() { return t('tictactoe.touchControls'); },
     get description() { return t('tictactoe.description'); },
   };
 
@@ -134,6 +136,10 @@ export class TicTacToeGame extends BaseGame {
     const r = Math.floor((y - BY) / CELL);
     if (c < 0 || r < 0 || c > 2 || r > 2) return -1;
     return r * 3 + c;
+  }
+
+  needsFullRate() {
+    return this.state === 'playing' && this.aiTurn;
   }
 
   update(dt) {

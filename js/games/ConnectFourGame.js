@@ -136,7 +136,9 @@ export class ConnectFourGame extends BaseGame {
     height: H,
     hasScore: false,
     theme: [NEON.blue, NEON.yellow],
+    icon: '🔴',
     get controls() { return t('connect4.controls'); },
+    get touchControls() { return t('connect4.touchControls'); },
     get description() { return t('connect4.description'); },
   };
 
@@ -176,6 +178,10 @@ export class ConnectFourGame extends BaseGame {
   colAt(x) {
     const c = Math.floor((x - BX) / CELL);
     return c >= 0 && c < COLS ? c : -1;
+  }
+
+  needsFullRate() {
+    return !!this.falling || (this.state === 'playing' && this.aiTurn);
   }
 
   update(dt) {
@@ -270,23 +276,27 @@ export class ConnectFourGame extends BaseGame {
     return c;
   }
 
+  /** Parlamalı taş; sprite önbelleğinden kopyalanır (42 taşın her karede ayrı ayrı bulanıklaştırılması pahalı). */
   drawPiece(cx, cy, player, alpha = 1) {
     const ctx = this.ctx;
     const color = COLORS[player];
+    const R = PIECE_R;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 14;
-    ctx.beginPath();
-    ctx.arc(cx, cy, PIECE_R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(cx, cy, PIECE_R * 0.62, 0, Math.PI * 2);
-    ctx.stroke();
+    this.drawCached(`c4-piece:${color}`, cx - R, cy - R, R * 2, R * 2, 14, (g) => {
+      g.fillStyle = color;
+      g.shadowColor = color;
+      g.shadowBlur = 14;
+      g.beginPath();
+      g.arc(R, R, R, 0, Math.PI * 2);
+      g.fill();
+      g.shadowBlur = 0;
+      g.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(R, R, R * 0.62, 0, Math.PI * 2);
+      g.stroke();
+    });
     ctx.restore();
   }
 
@@ -324,26 +334,26 @@ export class ConnectFourGame extends BaseGame {
       this.drawPiece(BX + f.col * CELL + CELL / 2, Math.min(f.y, f.targetY), f.player);
     }
 
-    // Delikli tahta (evenodd)
-    ctx.save();
-    ctx.beginPath();
-    roundRect(ctx, BX - 8, BY - 8, CELL * COLS + 16, CELL * ROWS + 16, 16);
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cx = BX + c * CELL + CELL / 2;
-        const cy = BY + r * CELL + CELL / 2;
-        ctx.moveTo(cx + PIECE_R + 3, cy);
-        ctx.arc(cx, cy, PIECE_R + 3, 0, Math.PI * 2);
+    // Delikli tahta (evenodd): hiç değişmez, bir kez çizilip önbellekten kopyalanır.
+    this.drawCached('c4-board', BX - 8, BY - 8, CELL * COLS + 16, CELL * ROWS + 16, 12, (g) => {
+      g.beginPath();
+      roundRect(g, 0, 0, CELL * COLS + 16, CELL * ROWS + 16, 16);
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cx = 8 + c * CELL + CELL / 2;
+          const cy = 8 + r * CELL + CELL / 2;
+          g.moveTo(cx + PIECE_R + 3, cy);
+          g.arc(cx, cy, PIECE_R + 3, 0, Math.PI * 2);
+        }
       }
-    }
-    ctx.fillStyle = 'rgba(26, 26, 72, 0.92)';
-    ctx.fill('evenodd');
-    ctx.strokeStyle = NEON.blue;
-    ctx.shadowColor = NEON.blue;
-    ctx.shadowBlur = 12;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
+      g.fillStyle = 'rgba(26, 26, 72, 0.92)';
+      g.fill('evenodd');
+      g.strokeStyle = NEON.blue;
+      g.shadowColor = NEON.blue;
+      g.shadowBlur = 12;
+      g.lineWidth = 2;
+      g.stroke();
+    });
 
     // Kazanan dörtlü
     if (this.win) {

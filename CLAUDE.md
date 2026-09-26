@@ -13,23 +13,26 @@ Kullanıcıya dönük tanıtım, kontrol tablosu ve tasarım gerekçeleri `READM
 
 ## Kesin kurallar (ihlal etme)
 
-1. **Saf HTML + CSS + vanilla JS (ES modules).** npm bağımlılığı, `package.json`, framework, CDN, harici font/kütüphane, resim veya ses dosyası YOK. Sesler `core/Sound.js` (Web Audio) ile üretilir.
+1. **Saf HTML + CSS + vanilla JS (ES modules).** npm bağımlılığı, `package.json`, framework, CDN, harici font/kütüphane, resim veya ses dosyası YOK. Sesler `core/Sound.js` (Web Audio) ile üretilir. Favicon ve PWA simgesi de koddan: data URI SVG.
 2. **Yollar göreli** (`./js/...`, `../core/...`); site `/arcade-hub/` alt dizininde çalışır. `/` ile başlayan yol yok.
 3. **Import'lar `.js` uzantılı ve dosya adıyla birebir aynı harflerle** yazılır (Pages Linux, büyük/küçük harfe duyarlı).
 4. Kökteki boş **`.nojekyll`** silinmez. `.gitattributes` satır sonlarını LF'ye sabitler.
 5. Oyunlar **asla** `addEventListener`, `setTimeout`, `setInterval`, `requestAnimationFrame` kullanmaz. Girdi yalnızca `this.input`'tan, zamanlama `update(dt)` sayaçlarıyla yapılır. `tests/check.mjs` bu kuralı otomatik denetler.
 6. Oyun modülleri üst düzeyde DOM'a dokunmaz; Node'da import edilebilmeleri gerekir (testler böyle çalışıyor).
-7. **Kullanıcıya görünen metin koda gömülmez.** `t('anahtar', {param})` kullanılır; anahtar hem `js/i18n/tr.js` hem `en.js`'e eklenir (`check.mjs` denetler). `meta.title/controls/description` (ve Minesweeper `scoreLabel`) getter'dır. `menuButtons` etiketleri de getter olur: `{ get label() { return t('mode.1p'); }, … }`. Dar alanlara çizilen metinlere `text(..., { maxWidth })` verilir (çeviriler uzun olabilir).
+7. **Kullanıcıya görünen metin koda gömülmez.** `t('anahtar', {param})` kullanılır; anahtar hem `js/i18n/tr.js` hem `en.js`'e eklenir (`check.mjs` denetler). `meta.title/controls/touchControls/description` (ve Minesweeper `scoreLabel`) getter'dır. `touchControls` dokunmatik cihazda (`hover: none` + `pointer: coarse`) kontrol satırında gösterilir; HTML'de `data-i18n-touch` aynı işi statik metinler için yapar (alt bilgi). `menuButtons` etiketleri de getter olur: `{ get label() { return t('mode.1p'); }, … }`. Dar alanlara çizilen metinlere `text(..., { maxWidth })` verilir (çeviriler uzun olabilir).
 8. Her değişiklikten sonra üç test komutu çalıştırılır (aşağıda). Commit ve push yalnızca kullanıcı isterse yapılır.
 
 ## Dosya haritası
 
 ```
 index.html              tek sayfa; menü HTML'de yazılı DEĞİL (app.js üretir). Favicon data-URI.
+manifest.webmanifest    PWA (ana ekrana ekleme); start_url/scope göreli, simge data URI SVG
+sw.js                   service worker: ÖNCE AĞ sonra önbellek (çevrimdışı açılış); dosya listesi tutmaz
 css/style.css           tema değişkenleri; canvas boyutu --cw/--ch ile (aşağıya bak); ≤640px'te menü yatay kayar
 js/app.js               GAMES dizisi (tek kaynak), menü üretimi, hash yönlendirme, Ayarlar/Duraklat/Ses/dil,
                         oyun teması (--accent), sahne giriş animasyonu, şemadan üretilen ayar paneli,
-                        window.arcadeHub = { engine, games, openSettings, closeSettings, setLang }
+                        mobil oyun çubuğu + oyun seçici (openPicker/closePicker), --avail-h (fitStage),
+                        window.arcadeHub = { engine, games, openSettings, closeSettings, openPicker, closePicker, setLang }
 js/core/I18n.js         t(key, params), setLang/getLang/onLangChange, detectLang, LANGS; DOM'a dokunmaz (Node'da 'tr')
 js/i18n/tr.js, en.js    düz anahtar → metin sözlükleri; değer fonksiyon da olabilir (çoğul: en 'snake.apples')
 js/core/Engine.js       rAF döngüsü, dt ≤ 0.1, HiDPI, loadGame(), resizeCanvas(w,h), pause/resume/togglePause,
@@ -51,24 +54,27 @@ tests/browser-smoke.mjs headless Chrome/Edge testi (CDP + Node yerleşik WebSock
 ### Engine
 - Döngü: `update(dt)` → arka planı `NEON.bg` ile doldur → `draw()` → `drawOverlay()` → (duraklatıldıysa) duraklatma ekranı → `input.endFrame()`. `draw` ve `drawOverlay` ayrı `save/restore` blokları içinde çağrılır.
 - `loadGame(Class)`: önceki oyunun `destroy()`'u → `input.reset()` → `resizeCanvas(meta.width, meta.height)` → `new Class(engine)` → `init()`.
-- `resizeCanvas(w,h)`: canvas iç çözünürlüğü = w·dpr (dpr en fazla 3), `setTransform(dpr…)`, CSS değişkenleri `--cw`/`--ch`, `input.setSize`. Yakınlaştırma dpr'ı değiştirirse her karede yeniden çağrılır. Oyun sırasında çağrılabilir (Minesweeper çağırıyor).
+- `resizeCanvas(w,h)`: mantıksal boyutu, CSS değişkenlerini `--cw`/`--ch` ve `input.setSize`'ı ayarlar, sonra `_fitBacking()` çağırır. Oyun sırasında çağrılabilir (Minesweeper çağırıyor).
+- **İç çözünürlük ekrandaki boyuttan gelir:** `_fitBacking` = `clientWidth × dpr` (dpr en fazla `MAX_DPR` = 2), `setTransform(bw/w, …)`, `engine.scale` = mantıksal px → canvas px. Eskiden `w × dpr` idi; telefonda 600 px'lik oyun 1800 px çiziliyordu (3–5 kat fazla piksel, mobil FPS sorununun ana nedeni). `ResizeObserver` boyut değişince yeniden uydurur ve silinen tuvali `_render(0)` ile aynı karede tekrar çizer (titreme olmasın). Boyut aynıysa `canvas.width`'e dokunmaz (içeriği siler). `shadowBlur` canvas pikseliyle ölçülür, ölçekten etkilenmez.
+- **Kare hızı politikası** (`_minFrameGap`): dokunmatik cihazda (`limitHighRefresh` = `pointer: coarse`) ekran >100 Hz ise 60 FPS; duraklatılmışken 10; ayar paneli açıkken ve **sakin** ekranda 30 FPS. Sakin = son girdiden 2,5 sn geçmiş (`input.lastActivity`), `stateTime > 1` ve `game.needsFullRate()` false. `BaseGame.needsFullRate()` varsayılanı `state === 'playing'`; sıra tabanlı oyunlar yalnızca animasyon sürerken true döner (2048 `slide/effects`, Connect Four `falling`/AI sırası, XOX AI sırası, Memory `lockTimer`, Life `running`; Minesweeper/Lights Out hep false). Yeni girdi gelince kare beklenmeden işlenir. Atlanan karelerde `update` de çağrılmaz; `dt` gerçek süredir, oyun hızı değişmez. Sürekli animasyonu olan yeni bir sıra tabanlı oyun eklerken `needsFullRate`'i doğru yaz, yoksa animasyon 30 FPS'e düşer.
 - Duraklatma: P/Escape (Engine tüketir, oyun görmez), duraklatılmışken dokunma devam ettirir, `visibilitychange` gizlenince duraklatır. Yalnızca `game.canPause()` true iken duraklatılabilir (varsayılan: `state === 'playing'`).
 - Oyunda istisna olursa döngü durmaz; hata oyun başına bir kez `console.error` edilir.
 - `suspended` (ayar paneli açıkken): `game.update` çağrılmaz, girdi (P/Esc dahil) yok sayılır, çizim sürer (canlı ayar önizlemesi). `setSuspended(false)` girdiyi sıfırlar ve oynanan oyunu duraklatılmış bırakır.
 - `openSettings`: app.js'in verdiği geri çağrı; BaseGame'in hazır ekranındaki "⚙ Ayarlar" düğmesi (O tuşu) bunu çağırır. fakeEngine'de yoktur → düğme çıkmaz.
 - Geçiş: `loadGame` her oyunda `meta.theme` renkleriyle 0,5 sn'lik panjur perdesi başlatır. `prefers-reduced-motion: reduce` ise (`engine.reducedMotion`) yalnızca solma çizilir. **Bu makinede headless Chrome "reduce" bildiriyor**; panjuru görmek için CDP `Emulation.setEmulatedMedia` ile `no-preference` ver.
-- Ses bağlamı ilk `pointerdown`/`keydown`'da (capture) `sound.unlock()` ile açılır.
+- Ses bağlamı `pointerdown`/`pointerup`/`touchend`/`keydown`'da (capture) `sound.unlock()` ile açılır. **Dokunmada tarayıcı ses iznini parmak kalkınca verir** (pointerdown'da değil; Esc tuşu hiç sayılmaz). Eskiden yalnızca pointerdown dinlendiği için telefonda ilk dokunuş sessiz kalıyordu. `unlock`, `navigator.userActivation.hasBeenActive` false iken bağlam kurmaz (askıda doğup konsola uyarı düşmesin).
 
 ### Input
 - Klavye: `isDown(...codes)`, `wasPressed(...codes)` (tuş tekrarı sayılmaz), `consume(...codes)`. Değerler `e.code` (`'ArrowUp'`, `'KeyW'`, `'Space'`, `'Digit1'`). Ctrl/Alt/Meta'lı basışlar yok sayılır. Ok tuşları ve Space için `preventDefault` uygulanır.
 - **`wasTyped(...keys)`**: `e.key` tabanlı, YALNIZCA `+`/`-` gibi semboller için. Türkçe Q klavyede `-` tuşunun `e.code`'u `'Equal'` olduğundan semboller `e.code` ile yanlış algılanır.
 - `pointer` alanları: `x, y` (mantıksal koordinat), `isDown`, `pressed` (ham basış, bu kare), `released`, `clicked`, `button` (0 / 2), `type` (`'mouse'|'touch'|'pen'`), `hover` (fare canvas üzerinde mi), `startX/startY` (basış noktası).
 - **`clicked` semantiği:** fare → basış anında (sağ tık `button = 2`). Dokunma/kalem → bırakışta, yalnızca hareket ≤12 CSS px ise. ~400 ms uzun basış → `clicked` + `button = 2` (bırakışta ayrıca tap üretmez). Anında tepki gereken oyunlar (Flappy) `pointer.pressed` kullanır.
-- `swipe`: `'up'|'down'|'left'|'right'|null`. Hareket başına bir kez, 30 CSS px eşiğinde, sürükleme sırasında tetiklenir (fareyle sürüklemede de).
+- `swipe`: `'up'|'down'|'left'|'right'|null`. Hareket başına bir kez, 30 CSS px eşiğinde, sürükleme sırasında tetiklenir (fareyle sürüklemede de). **Yön kilidi:** bir eksen diğerinin `SWIPE_RATIO` (1,4) katı değilse (çapraz hareket) 60 px'e kadar beklenir; eskiden Tetris'te yana sürüklerken hafif aşağı kayma sert düşürme yapıyordu (tarayıcı testi 5f bunu denetler). Eşikler CSS pikselidir (parmak mesafesi); Tetris sürüklemesi mantıksal hücre başınadır, yani parça parmağı ekranda birebir izler; ölçekleme gerekmez.
+- **Dokunma yüzeyi:** `input.setSurface(stage)` + `surfaceEnabled`: mobil oyun modunda, `meta.touchSurface: true` olan oyunlarda (Snake, 2048, Tetris, Breakout, Flappy) canvas dışında başlayan dokunuşlar da oyuna gider (başparmak tahtanın altından swipe/sürükleme yapar). Yalnızca pointerdown iletilir; `setPointerCapture(canvas)` gerisini canvas'a yönlendirir. Bu hareketlerin koordinatları canvas sınırına sıkıştırılır. Düğmeler (`button, a, select, input, label`) hariç. Dışarıdaki bir dokunuşun istenmeyen hamle yapacağı oyunlarda (sıra tabanlılar, Pong, Life) bayrağı açma.
 - `endFrame()` tek karelik her şeyi sıfırlar; `reset()` oyun değişince tüm durumu (basılı tuşlar, jest, uzun basış zamanlayıcısı) temizler. Pencere `blur` olunca basılı tuşlar temizlenir.
 
 ### BaseGame
-- `static meta`: zorunlu `id, title, width, height, controls, description` (metinler `t()` getter'ı). İsteğe bağlı: `hasScore: false` (HUD skoru ve rekor gizlenir), `scoreLabel`, `lowerIsBetter`, `recordOnWin`, `theme: [accent, accent2]` (üst çubuk/menü/başlık/canvas parıltısı ve geçiş perdesi). `controls` ve `description` canvas altında gösterilir.
+- `static meta`: zorunlu `id, title, width, height, controls, touchControls, description, icon` (icon: mobil oyun seçicideki emoji) (metinler `t()` getter'ı). İsteğe bağlı: `hasScore: false` (HUD skoru ve rekor gizlenir), `scoreLabel`, `lowerIsBetter`, `recordOnWin`, `theme: [accent, accent2]` (üst çubuk/menü/başlık/canvas parıltısı ve geçiş perdesi). `controls` ve `description` canvas altında gösterilir.
 - **`static settings`** (ayar şeması): `[{ id, labelKey, type?: 'color', default, live?, options: [{ value, labelKey | label, params?, note?, color? }] }]`. Değerler `this.settings.<id>`'de (constructor'da `arcade-hub:settings:<oyun>`'dan `resolveSettings` ile doğrulanarak yüklenir). `setSetting(id, v)` kaydeder ve `onSettingChange` çağırır: varsayılan davranış `live` değilse `init()` (hazır ekranı). `reset()` boyutları `this.settings`'ten okur. Boyut değiştiren ayarlar `recordKey`'i ayırır ama varsayılan değer eski anahtarı korur. Hazır ekranı ayar özetini (`settingsSummary`) otomatik gösterir; oyun `overlayContent`'te `c.lines = [...]` yerine `unshift/push` kullanırsa özet kalır.
 - Erişim: `this.engine, ctx, input, storage, sound, width, height` (getter, engine'den okunur), `meta`, `best`, `recordKey` (varsayılan `meta.id`), `isEnded`.
 - Durum: `score`, `state` (`'ready'|'playing'|'over'|'won'`), `stateTime` (mevcut durumdaki süre), `time` (toplam süre, animasyon için).
@@ -87,17 +93,29 @@ tests/browser-smoke.mjs headless Chrome/Edge testi (CDP + Node yerleşik WebSock
 - `gameOver(won)`: durumu ayarlar, `recordOnWin` yoksa ya da kazanıldıysa `recordScore()` çağırır, win/lose sesi çalar. `recordScore()` bitiş olmadan da çağrılabilir.
 - Özelleştirme: `overlayContent()` → `{ title, color, lines: [string | {text,color,size?}], hint }` (null dönerse overlay çizilmez). `formatScore(v)`. `drawOverlay()` tamamen override edilebilir (Life, Minesweeper) ya da genişletilebilir (Flappy kuş önizlemesi).
 - **Overlay yerleşimi taşmaz:** `overlayLayout()` başlığı, satırları ve ipucunu `fitText` ile panel iç genişliğine (panel − 32) sığdırır: önce küçültür (satır en az 12 px), sonra `' · '` (yoksa boşluk) ayraçlarından böler. Layout'ta `titleLines`, `lines[].size`, `hintLines` vardır. Overlay `OVERLAY_FADE` (0,22 sn) boyunca solarak ve 14 px kayarak belirir (`overlayProgress()`); `drawButton` mevcut `globalAlpha`'yı çarpar.
+- **`drawCached(key, x, y, w, h, glow, paint)`** (sprite önbelleği): `paint(g)` yerel koordinatlarda (0..w, 0..h) bir kez, `engine.scale` çözünürlüğündeki gizli canvas'a çizilir, sonra `drawImage` ile kopyalanır. Mevcut dönüşüm/globalAlpha uygulanır. `glow` = paint içindeki en büyük shadowBlur (kenar payı buradan). **Anahtar görünümü belirleyen her şeyi içermeli** (renk, boyut, eşleşme durumu…); ölçek otomatik eklenir. Node'da doğrudan çizer. Kullananlar: Connect Four taş + tahta, Memory kart yüzü/sırtı, Lights Out yanan hücre. Döngüde çok sayıda parlamalı/kırpmalı nesne çizen yeni kodda bunu kullan. Çok sayıda aynı renkli dikdörtgen için de tek yol + tek `fill` kullan (Life).
 - Yardımcılar: `text(str, x, y, {size, color, align, baseline, weight, glow, maxWidth})`, `drawHUD(ortaMetin)` (üstte 40 px: solda SKOR, sağda REKOR; üçüne de maxWidth), `drawButton(rect, label, {selected, color, size})`.
 
 ### Storage anahtarları (`arcade-hub:` önekli)
 `best:<recordKey>` (Minesweeper: `best:minesweeper-easy|medium|hard`; 2048: `best:2048` (4×4) / `best:2048-3|5|6`; Memory: `best:memory` (normal) / `best:memory-easy|hard|expert`), `muted`, `lang`, `settings:<oyun id>` (ayar nesnesi), `pong:mode`, `ttt:mode`, `ttt:difficulty`, `connect4:mode`, `minesweeper:difficulty`.
 
 ### CSS'te canvas boyutu
-`width: min(calc(var(--cw)*1px), 100%, calc(75vh * var(--cw) / var(--ch)))`, `height: auto`, `aspect-ratio: var(--cw) / var(--ch)`, `touch-action: none`. Canvas'a CSS `border` verme: Input koordinat dönüşümü `getBoundingClientRect` kullanır, kenarlık bunu kaydırır. Parlama `box-shadow` ile yapılır.
+`width: min(calc(var(--cw)*1px), 100%, calc(var(--avail-h, 75vh) * var(--cw) / var(--ch)))`, `height: auto`, `aspect-ratio: var(--cw) / var(--ch)`, `touch-action: none`. `--avail-h`'yi app.js `fitStage()` yazar: görünür yükseklik − canvas'ın sayfadaki üst konumu − 12 (masaüstünde en fazla %75; mobilde o genişlikte görülen en küçük `innerHeight`, adres çubuğu açılıp kapanınca zıplamasın). Resize/yön değişimi ve üst çubuk/menü/başlığın ResizeObserver'ı tetikler. Mobil düzen `(max-width: 640px), (max-height: 500px) and (pointer: coarse)` (yatay telefon dahil); `pointer: coarse`'ta düğmeler en az 44 px; kenarlar `env(safe-area-inset-*)`. Tarayıcı testi mobilde canvas'ın görünür alana sığmasını ve 44 px'i denetler.
+Canvas'a CSS `border` verme: Input koordinat dönüşümü `getBoundingClientRect` kullanır, kenarlık bunu kaydırır. Parlama `box-shadow` ile yapılır.
 Sayfa `lang`'ı seçilen dile göre değişir; Türkçede başlıklarda `text-transform: uppercase` kullanma ("MİNESWEEPER" gibi yanlış harfler oluşur). Büyük harfli canvas etiketleri sözlükte ayrı anahtardır (`common.PLAYER`), `toUpperCase` ile üretilmez.
 
 ### Tema ve üst çubuk (CSS)
 `--accent` / `--accent-2` `@property` ile kayıtlıdır (yumuşak renk geçişi) ve app.js tarafından `meta.theme`'den yazılır; `getComputedStyle` bunları `rgb()` döndürür. Üst çubuk düğmeleri, aktif menü hapı (`--btn-accent` her düğmede), başlık, canvas parıltısı ve ayar paneli bu değişkenleri `color-mix` ile kullanır. ≤640 px'te üst çubuk düğmeleri yalnızca simge gösterir (`.lbl` gizli; ad `aria-label`'da). Hareketi azalt açıkken kayma/bulanıklık animasyonları kapanır, solma ve renk geçişleri kalır.
+
+### Mobil oyun seçici
+Mobil düzende `#game-menu` gizlenir; yerine `#game-bar` (simge + oyun adı + "Tüm oyunlar ▾") görünür ve h1 başlık görsel olarak gizlenir (ekran okuyucuda kalır). Çubuk `#picker`'ı açar: ayar panelinin stilini (`.settings` sınıfları) paylaşan alttan sayfa; kartlar GAMES'ten üretilir (`meta.icon`, tema renkleri, puanlı oyunlarda varsayılan rekor). Açıkken oyun askıya alınır (`setSuspended`), Esc/arka plan kapatır, kart hash'i değiştirir. Hash'siz ilk açılışta mobilde kendiliğinden açılır. Masaüstünde menü aynen durur.
+
+### Mobil oyun modu, tam ekran, yan çevir ipucu
+- `syncPlayMode()`: mobil düzende, kullanıcı bu oyunda canvas'a dokunduysa (`engaged`, her oyun geçişinde sıfırlanır) ve `state === 'playing'`, duraklatılmamış, panel kapalıysa `<html>`'e `play-mode` eklenir: üst çubuk, oyun çubuğu, metinler, alt bilgi gizlenir; `#play-bar` (simge + ad + ⛶ + ⏸) görünür, kenar boşlukları 4 px. `engaged` şartı Life gibi hep "oynanan" oyunların açılır açılmaz arayüzü gizlemesini önler.
+- Engine artık `game.state` değişince de `onChange` yayar (app.js `onEngineChange` = syncToolbar + syncPlayMode).
+- Tam ekran: `document.fullscreenEnabled` yoksa (iPhone Safari) ⛶ gizli. Girişte yatay oyunlarda `screen.orientation.lock('landscape')` denenir (Android). `fullscreenchange` ve mod değişimi `fitMinHeight`'ı sıfırlar.
+- `.tool-btn[hidden]` kuralı gerekli: sınıfın `display`'i `hidden` özniteliğini ezer. `setToolButton` düğmede `.ico` ve `.lbl` span'ı bekler.
+- `html[data-wide]` (canvas en/boy > 1,2: Pong, Life, zor Minesweeper) + dikey mobil → canvas altında "yan çevir" ipucu (`fitStage` ayarlar).
 
 ## Oyunlar
 
@@ -115,6 +133,14 @@ Sayfa `lang`'ı seçilen dile göre değişir; Türkçede başlıklarda `text-tr
 | `lightsout` | LightsOutGame 500×550 | 10 seviye; `clicksForLevel = 3 + 2(n−1)` farklı hücreye tıklanarak karıştırılır. `solve()` = GF(2) Gauss eliminasyonu + en az tıklamalı çözüm (hedef hamle ve ipucu bunu kullanır). Alt düğmeler: Sıfırla (R), İpucu (H). Puan: `max(10, 100·seviye − 10·fazla hamle − 25·ipucu)`. |
 | `memory` | MemoryGame 600×650 | Ayar `grid`: easy 3×4 / **normal 4×4** / hard 4×5 / expert 5×6 (`GRIDS`, `gridLayout` kare kartı ortalar; `this.cols/rows/pairs/card/gx/gy`). Yüz → `faceOf` (8 şekil × 8 renk, 8'den sonra renk kaydırılır). Eşleşmeyen kartlar 0,8 sn kilitlenir. Puan `max(50, 125·çift − 40·(hamle−çift))` (4×4: 1000). Saf: `createDeck(rng, pairs)`, `computeScore(moves, pairs)`, `faceOf`, `gridLayout`. |
 | `life` | LifeGame 800×600 | `hasScore:false`, durum hep `'playing'`, `canPause()` hep true, kendi `drawOverlay`'i var: üstte 24 px durum şeridi, altta 60 px dokunmatik araç çubuğu (Oynat, Adım, Rastgele, Temizle, döngüsel desen, döngüsel hız). Klavye ve düğmeler aynı `action(id)` metodunu çağırır. Çubukta başlayan jest çizim yapmaz (`gestureOnBar`). Çizim `pointer.startX/Y`'den başlayıp Bresenham ile yapılır. Açılışta bir Gosper gun hazır bekler. Saf: `step` (toroidal), `parseRLE`, `placePattern`, `PATTERNS`. |
+
+## PWA (ana ekrana ekleme + çevrimdışı)
+
+- `sw.js` her GET isteğini önce ağdan ister ve yanıtı önbelleğe yazar; ağ yoksa önbellekten verir (gezinmede `./` kabuğu). Çevrimiçiyken hep güncel sürüm gelir, yani push'lar hemen görünür. Önbellek adı `arcade-hub-v1`; `activate` diğer adları siler. Stratejiyi değiştirirsen adı artır.
+- İlk ziyarette SW sayfa yüklendikten sonra devreye girer. app.js, `performance.getEntriesByType('resource')` listesini SW'ye mesajla gönderir ve SW bu dosyaları önbelleğe alır. Böylece ilk ziyaretten sonra site çevrimdışı açılır. Yeni oyun/dosya eklemek SW'de değişiklik gerektirmez.
+- Kayıt yalnızca `isSecureContext`'te yapılır (https ya da localhost).
+- iPhone ana ekran simgesi PNG ister (`apple-touch-icon`). Proje kuralı gereği resim dosyası olmadığından iOS sayfa görüntüsünü kullanır; Android/Chrome SVG simgeyi kabul ediyor (`Page.getInstallabilityErrors` boş).
+- `check.mjs`: manifest JSON'u, göreli yollar, data URI simge, sw.js'de mutlak yol yok, `register('./sw.js')`. Tarayıcı testi 7. bölüm: manifest hatası yok, kurulabilir, önbellekte ≥ oyun+8 dosya, **sunucu kapatılınca site açılıyor** (sunucuyu kapattığı için en sonda; `--url`'de atlanır).
 
 ## Test ve doğrulama
 
@@ -136,7 +162,7 @@ node tests/browser-smoke.mjs --url https://omerfarukoktay112-max.github.io/arcad
 
 ## Yeni oyun ekleme
 
-1. `js/games/YeniGame.js`: `export class YeniGame extends BaseGame { static meta = {...} }`. Sınıf adı dosya adıyla aynı olmalı; `check.mjs` export'u bu adla arar. Metinler `t()` getter'larıyla, `theme` renkleriyle; ayar gerekiyorsa `static settings`. Tüm anahtarlar tr.js + en.js'e.
+1. `js/games/YeniGame.js`: `export class YeniGame extends BaseGame { static meta = {...} }`. Sınıf adı dosya adıyla aynı olmalı; `check.mjs` export'u bu adla arar. Metinler `t()` getter'larıyla (`touchControls` dahil: yalnızca dokunma hareketlerini anlat), `theme` renkleri ve `icon` emojisiyle; ayar gerekiyorsa `static settings`. Tüm anahtarlar tr.js + en.js'e.
 2. `js/app.js`: import et ve `GAMES` dizisine ekle. Menü ve `#<id>` otomatik gelir.
 3. Saf mantığı export et ve `tests/logic.test.mjs`'e ekle; yeni bölümü `/* ===== Koşucu ===== */` işaretinin önüne koy. İsteğe bağlı olarak `SCENARIOS`'a tarayıcı senaryosu ekle.
 4. Klavyesiz cihazı unutma: klavyeye özel her eylemin dokunmatik bir karşılığı olmalı (canvas içi düğme, swipe ya da uzun basış).

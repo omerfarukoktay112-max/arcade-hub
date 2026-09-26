@@ -84,6 +84,32 @@ const css = readFileSync(join(ROOT, 'css', 'style.css'), 'utf8');
 if (/url\(|@import/.test(css)) fail('style.css: harici kaynak/url() kullanılmamalı');
 if (!existsExactCase(join(ROOT, '.nojekyll'))) fail('.nojekyll eksik');
 
+console.log('PWA (manifest + service worker)');
+{
+  let manifest = null;
+  try {
+    manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.webmanifest'), 'utf8'));
+  } catch (err) {
+    fail(`manifest.webmanifest okunamadı/geçersiz JSON: ${err.message}`);
+  }
+  if (manifest) {
+    for (const key of ['name', 'short_name', 'start_url', 'scope', 'display', 'icons']) {
+      if (!manifest[key]) fail(`manifest: "${key}" eksik`);
+    }
+    for (const key of ['start_url', 'scope']) {
+      if (/^(\/|https?:)/.test(manifest[key] || '')) fail(`manifest.${key} göreli olmalı (site alt dizinde): "${manifest[key]}"`);
+    }
+    // Proje kuralı: resim dosyası yok → simgeler koddan (data URI SVG)
+    for (const icon of manifest.icons || []) {
+      if (!String(icon.src).startsWith('data:image/svg+xml')) fail(`manifest: simge dosya değil data URI SVG olmalı (${String(icon.src).slice(0, 30)}…)`);
+    }
+  }
+  if (!html.includes('rel="manifest"')) fail('index.html: manifest bağlantısı yok');
+  const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
+  if (/['"`]\/(?!\/)/.test(sw.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''))) fail('sw.js: mutlak yol kullanılmamalı');
+  if (!/register\('\.\/sw\.js'\)/.test(readFileSync(join(ROOT, 'js', 'app.js'), 'utf8'))) fail("app.js: service worker './sw.js' olarak kaydedilmiyor");
+}
+
 console.log('Oyun kaydı');
 const appSrc = readFileSync(join(ROOT, 'js', 'app.js'), 'utf8');
 const imported = [...appSrc.matchAll(/from\s+'\.\/games\/([^']+)\.js'/g)].map((m) => m[1]);
@@ -98,7 +124,7 @@ for (const name of imported) {
     continue;
   }
   const meta = Game.meta || {};
-  for (const key of ['id', 'title', 'width', 'height', 'controls', 'description']) {
+  for (const key of ['id', 'title', 'width', 'height', 'controls', 'touchControls', 'description', 'icon']) {
     if (meta[key] === undefined || meta[key] === '') fail(`${name}.meta.${key} eksik`);
   }
   if (!Object.prototype.hasOwnProperty.call(Game, 'meta')) fail(`${name} kendi static meta'sını tanımlamıyor`);
@@ -131,7 +157,7 @@ console.log('Çoklu dil (i18n) anahtarları');
     }
   }
   // HTML'deki data-i18n* anahtarları
-  for (const m of html.matchAll(/data-i18n(?:-aria|-content)?="([^"]+)"/g)) {
+  for (const m of html.matchAll(/data-i18n(?:-aria|-content|-touch)?="([^"]+)"/g)) {
     if (!has(m[1])) fail(`index.html: i18n anahtarı "${m[1]}" sözlükte yok`);
   }
   // Oyun ayar şemaları (dinamik üretilen etiketler dahil)

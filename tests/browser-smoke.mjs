@@ -41,6 +41,7 @@ const HTTP_PORT = 8765;
 const DEBUG_PORT = 9333;
 
 const server = await startServer(HTTP_PORT);
+let serverClosed = false; // PWA testi çevrimdışı açılışı denemek için sunucuyu erken kapatır
 const profile = mkdtempSync(join(tmpdir(), 'arcade-hub-'));
 const browser = spawn(browserPath, [
   '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`,
@@ -58,7 +59,7 @@ async function cleanup(code) {
     ws?.close();
   } catch {}
   browser.kill();
-  server.close();
+  if (!serverClosed) server.close();
   await sleep(300);
   try {
     rmSync(profile, { recursive: true, force: true });
@@ -417,12 +418,18 @@ try {
       const c = document.getElementById('game-canvas').getBoundingClientRect();
       const e = window.arcadeHub.engine;
       return { scrollW: document.documentElement.scrollWidth, cw: c.width, ch: c.height, left: c.left, right: c.right,
-               ratio: (c.width / c.height) / (e.width / e.height), dpr: e.canvas.width / e.width };
+               ratio: (c.width / c.height) / (e.width / e.height), bw: e.canvas.width, bh: e.canvas.height, lw: e.width,
+               bottom: c.bottom + scrollY, innerH: innerHeight,
+               small: [...document.querySelectorAll('.tool-btn, .menu-btn')].filter((b) => { const h = b.getBoundingClientRect().height; return h > 0 && h < 44; }).length };
     })()`);
     if (m.scrollW > 375) problems.push(`mobil ${id}: yatay taşma (scrollWidth ${m.scrollW})`);
     if (m.left < 0 || m.right > 375) problems.push(`mobil ${id}: canvas ekrandan taşıyor (${m.left}–${m.right})`);
+    if (m.bottom > m.innerH) problems.push(`mobil ${id}: canvas görünür yüksekliğe sığmıyor (alt ${Math.round(m.bottom)} > ${m.innerH})`);
+    if (m.small) problems.push(`mobil ${id}: 44 px'ten kısa ${m.small} dokunma hedefi`);
     if (Math.abs(m.ratio - 1) > 0.02) problems.push(`mobil ${id}: en-boy oranı bozuk (${m.ratio.toFixed(3)})`);
-    if (Math.abs(m.dpr - 2) > 0.01) problems.push(`mobil ${id}: HiDPI ölçeği ${m.dpr}`);
+    // İç çözünürlük ekrandaki boyuta göre: CSS genişliği × dpr (2); mantıksal boyut × dpr DEĞİL.
+    if (Math.abs(m.bw - m.cw * 2) > 2) problems.push(`mobil ${id}: iç çözünürlük ${m.bw} ≠ CSS ${m.cw} × 2`);
+    if (m.bw >= m.lw * 2 && m.cw < m.lw - 1) problems.push(`mobil ${id}: canvas gereğinden büyük çiziliyor (${m.bw}x${m.bh})`);
     await shot(`mobile-${id}`);
   }
   await sleep(300);
@@ -489,11 +496,170 @@ try {
   expect(await evaluate(`${G}.running`), 'dokunma: Life OYNAT düğmesi çalışmadı');
   await shot('mobile-touch-life');
 
+  // 5b) Kare hızı politikası: 60 FPS sınırı, sakin ekranda CALM_FPS, duraklatmada PAUSED_FPS,
+  //     girdi gelince hemen tam hıza dönüş. Sayfa içinde 1 sn boyunca çizilen kare sayılır.
+  const fps = (setup = '') => evaluate(`(async () => {
+    const e = window.arcadeHub.engine; ${setup}
+    let n = 0; const orig = e._draw; e._draw = function (dt) { n++; return orig.call(this, dt); };
+    await new Promise((r) => setTimeout(r, 1000));
+    e._draw = orig; return n;
+  })()`);
+  const oldLimit = await evaluate(`window.arcadeHub.engine.limitHighRefresh`);
+  const rafAvg = await evaluate(`window.arcadeHub.engine._rafAvg`);
+  await evaluate(`window.arcadeHub.engine.limitHighRefresh = true`);
+  await go('snake');
+  await evaluate(`${G}.start()`);
+  await sleep(700);
+  const capped = await fps();
+  if (rafAvg < 10) expect(capped <= 66 && capped >= 40, `kare hızı: 60 FPS sınırı çalışmadı (${capped} kare/sn, rAF ${rafAvg.toFixed(1)} ms)`);
+  expect(capped >= 40, `kare hızı: oynarken çok düşük (${capped})`);
+  await evaluate(`window.arcadeHub.engine.pause()`);
+  const paused = await fps();
+  expect(paused <= 13 && paused >= 5, `kare hızı: duraklatmada ~10 FPS beklenirdi (${paused})`);
+  await evaluate(`window.arcadeHub.engine.resume()`);
+  await go('2048');
+  await evaluate(`${G}.start()`);
+  await sleep(1300); // durum 1 sn'den eski olsun
+  const calm = await fps(`e.input.lastActivity = 0;`);
+  expect(calm <= 36 && calm >= 15, `kare hızı: sakin 2048 ekranında ~30 FPS beklenirdi (${calm})`);
+  const woke = await evaluate(`(async () => {
+    const e = window.arcadeHub.engine; e.input.lastActivity = 0;
+    await new Promise((r) => setTimeout(r, 300));
+    const before = e._lastFrame; const t0 = performance.now();
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft', key: 'ArrowLeft' }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowLeft', key: 'ArrowLeft' }));
+    while (e._lastFrame === before) await new Promise((r) => requestAnimationFrame(r));
+    return e._lastFrame - t0;
+  })()`);
+  expect(woke < 40, `kare hızı: sakin ekranda girdi gecikmeli işlendi (${woke.toFixed(1)} ms)`);
+  const awake = await fps();
+  expect(awake >= 40, `kare hızı: girdiden sonra tam hıza dönmedi (${awake})`);
+  await evaluate(`window.arcadeHub.engine.limitHighRefresh = ${oldLimit}`);
+  // 5c) Mobil oyun seçici: menü gizli, oyun çubuğu görünür; gerçek dokunuşla aç → seç → kapan.
+  const tapEl = async (sel) => {
+    const p = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] });
+    await sleep(40);
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(350);
+  };
+  const pickerState = () => evaluate(`({ open: document.getElementById('picker').classList.contains('open'),
+    hash: location.hash.slice(1), suspended: window.arcadeHub.engine.suspended,
+    menu: getComputedStyle(document.getElementById('game-menu')).display,
+    bar: getComputedStyle(document.getElementById('game-bar')).display,
+    barTitle: document.getElementById('game-bar-title').textContent,
+    cards: document.querySelectorAll('#picker-grid .pick').length })`);
+  await go('snake');
+  let ps = await pickerState();
+  expect(ps.menu === 'none' && ps.bar !== 'none', `seçici: mobilde menü/oyun çubuğu görünürlüğü yanlış ${JSON.stringify(ps)}`);
+  expect(ps.barTitle === (await evaluate(`${G}.meta.title`)), 'seçici: oyun çubuğu başlığı yanlış');
+  await tapEl('#game-bar');
+  ps = await pickerState();
+  expect(ps.open && ps.suspended && ps.cards === games.length, `seçici: dokunuşla açılmadı ${JSON.stringify(ps)}`);
+  await tapEl('#picker-grid .pick[data-id="memory"]');
+  ps = await pickerState();
+  expect(!ps.open && !ps.suspended && ps.hash === 'memory', `seçici: kart seçimi çalışmadı ${JSON.stringify(ps)}`);
+  await evaluate(`window.arcadeHub.openPicker()`);
+  await key('Escape');
+  ps = await pickerState();
+  expect(!ps.open && ps.hash === 'memory' && !(await evaluate(`window.arcadeHub.engine.paused`)), `seçici: Esc kapatmadı ya da oyunu duraklattı ${JSON.stringify(ps)}`);
+  // İlk ziyaret (hash yok): mobilde seçici kendiliğinden açılır
+  await send('Page.navigate', { url: BASE });
+  await sleep(1500);
+  ps = await pickerState();
+  expect(ps.open && ps.hash === 'snake', `seçici: hash'siz ilk açılışta açılmadı ${JSON.stringify(ps)}`);
+  await shot('mobile-picker');
+  // Yeni sayfadaki İLK etkileşim tek bir dokunuş: panel kapanmalı ve ses açılmalı
+  // (dokunmada ses izni parmak kalkınca oluşur; eskiden ilk dokunuş sessiz kalıyordu).
+  await tapEl('#picker-grid .pick[data-id="snake"]');
+  expect(!(await pickerState()).open, 'seçici: ilk açılıştaki panel kart seçimiyle kapanmadı');
+  const audio = await evaluate(`window.arcadeHub.engine.sound.ctx?.state ?? 'yok'`);
+  expect(audio === 'running', `ses: ilk dokunuştan sonra ses bağlamı çalışmıyor (${audio})`);
+
+  // 5d) Mobil oyun modu: dokunup başlayınca üst çubuk gizlenir ve canvas büyür; ⏸ ile geri gelir.
+  const playMode = () => evaluate(`(() => { const c = document.getElementById('game-canvas').getBoundingClientRect();
+    return { on: document.documentElement.classList.contains('play-mode'), top: Math.round(c.top), h: Math.round(c.height),
+      bottom: c.bottom, innerH: innerHeight, topbar: getComputedStyle(document.querySelector('.topbar')).display,
+      bar: getComputedStyle(document.getElementById('play-bar')).display, paused: window.arcadeHub.engine.paused,
+      state: window.arcadeHub.engine.game.state,
+      hint: getComputedStyle(document.querySelector('.rotate-hint')).display }; })()`);
+  await go('tetris');
+  const pm0 = await playMode();
+  expect(!pm0.on && pm0.topbar !== 'none' && pm0.bar === 'none', `oyun modu: hazır ekranında açık olmamalı ${JSON.stringify(pm0)}`);
+  await tapEl('#game-canvas');
+  const pm1 = await playMode();
+  expect(pm1.state === 'playing' && pm1.on && pm1.topbar === 'none' && pm1.bar !== 'none', `oyun modu: dokunup başlayınca açılmadı ${JSON.stringify(pm1)}`);
+  expect(pm1.h > pm0.h && pm1.top < pm0.top && pm1.bottom <= pm1.innerH, `oyun modu: canvas büyümedi/sığmadı ${pm0.h}→${pm1.h}, üst ${pm0.top}→${pm1.top}`);
+  await shot('mobile-play-mode');
+  await tapEl('#play-pause');
+  const pm2 = await playMode();
+  expect(pm2.paused && !pm2.on && pm2.topbar !== 'none', `oyun modu: ⏸ ile duraklatıp çıkmadı ${JSON.stringify(pm2)}`);
+  await tapEl('#game-canvas');
+  const pm3 = await playMode();
+  expect(!pm3.paused && pm3.on, `oyun modu: dokunarak devam edince geri gelmedi ${JSON.stringify(pm3)}`);
+  await go('life');
+  expect(!(await playMode()).on, 'oyun modu: Life açılır açılmaz (dokunmadan) açıldı');
+  await go('pong');
+  expect((await playMode()).hint !== 'none', 'yan çevir ipucu: dikey ekranda Pong için görünmedi');
+  await go('snake');
+  expect((await playMode()).hint === 'none', 'yan çevir ipucu: kare oyunda görünmemeli');
+
+  // 5f) Swipe yön kilidi + canvas dışındaki dokunma yüzeyi
+  const touchPath = async (x0, y0, pts) => {
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+    for (const [dx, dy] of pts) {
+      await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + dx, y: y0 + dy }] });
+      await sleep(30);
+    }
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(120);
+  };
+  await go('tetris');
+  await evaluate(`${G}.start()`);
+  await sleep(100);
+  const filled = `${G}.board.flat().filter(Boolean).length`;
+  const tBefore = await evaluate(`({ x: ${G}.current.x, y: ${G}.current.y, filled: ${filled} })`);
+  const tp = await css(150, 300);
+  // İlk eşik geçişi hafif aşağı ağırlıklı (25→, 31↓), sonra belirgin sağa: eskiden sert düşürürdü.
+  await touchPath(tp.x, tp.y, [[10, 12], [25, 31], [60, 32], [90, 33]]);
+  const tAfter = await evaluate(`({ x: ${G}.current.x, y: ${G}.current.y, filled: ${filled} })`);
+  expect(tAfter.filled === tBefore.filled && tAfter.y <= tBefore.y + 1, `swipe: çapraz sürükleme sert düşürme yaptı ${JSON.stringify({ tBefore, tAfter })}`);
+  expect(tAfter.x > tBefore.x, `swipe: yana sürükleme parçayı kaydırmadı ${JSON.stringify({ tBefore, tAfter })}`);
+
+  await go('snake');
+  await tapEl('#game-canvas'); // başlat → oyun modu + dokunma yüzeyi
+  const below = await evaluate(`(() => { const r = document.getElementById('game-canvas').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: Math.min(innerHeight - 20, r.bottom + 60), room: innerHeight - r.bottom,
+      surface: document.documentElement.classList.contains('touch-surface') }; })()`);
+  expect(below.surface, 'dokunma yüzeyi: Snake oyun modunda etkin değil');
+  if (below.room > 40) {
+    await touchPath(below.x, below.y, [[0, -15], [0, -35], [0, -50]]);
+    await sleep(300);
+    const dir = await evaluate(`${G}.dir`);
+    expect(dir.y === -1, `dokunma yüzeyi: canvas altındaki yukarı swipe yılanı çevirmedi ${JSON.stringify(dir)}`);
+  }
+  expect((await evaluate(`${G}.state`)) === 'playing', 'dokunma yüzeyi: swipe oyunu bozdu');
+
+  // 5e) Dokunmatik kontrol metinleri (hover: none + pointer: coarse)
+  for (const id of ['tetris', 'life']) {
+    await go(id);
+    const txt = await evaluate(`({ shown: document.getElementById('game-controls').textContent, touch: ${G}.meta.touchControls,
+      footer: document.querySelector('.footer').textContent })`);
+    expect(txt.shown === txt.touch, `dokunmatik metin: ${id} kontrol satırı klavye metnini gösteriyor (${txt.shown.slice(0, 40)}…)`);
+    expect(txt.footer.startsWith('⏸'), `dokunmatik metin: alt bilgi dokunmatik değil (${txt.footer.slice(0, 30)}…)`);
+  }
+
+  console.log(`  kare hızı   oynarken ${capped} · duraklatılmış ${paused} · sakin ${calm} · girdiden sonra ${awake} kare/sn (rAF ${rafAvg.toFixed(1)} ms)`);
+
   // 6) Dil, oyun teması, ayar paneli ve oyun ayarları (masaüstü görünümüne dönülür)
   await send('Emulation.setTouchEmulationEnabled', { enabled: false });
   await send('Emulation.clearDeviceMetricsOverride');
   await sleep(200);
   const text = (sel) => evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent.trim()`);
+  // Masaüstüne dönünce klavye metinleri geri gelir (medya sorgusu değişimi dinleniyor)
+  expect((await text('#game-controls')) === (await evaluate(`${G}.meta.controls`)), 'masaüstü: kontrol satırı klavye metnine dönmedi');
+  expect((await text('.footer')).startsWith('P / Esc'), 'masaüstü: alt bilgi klavye metnine dönmedi');
 
   // Dil seçici (gerçek <select> değişimi) → başlık, menü, üst çubuk ve canvas metinleri
   await go('snake');
@@ -653,6 +819,32 @@ try {
     await evaluate(`Object.assign(${G}.tally, { 1: 0, 2: 0, draw: 0 }); ${G}.init()`);
   }
   await evaluate(`window.arcadeHub.setLang('tr')`);
+
+  // 7) PWA: manifest, kurulabilirlik, service worker önbelleği ve SUNUCU KAPALIYKEN açılış.
+  //    Sunucuyu kapattığı için en sonda çalışır (yalnızca yerel testte).
+  const manifest = await send('Page.getAppManifest');
+  expect(!manifest.errors?.length, `PWA: manifest hataları ${JSON.stringify(manifest.errors)}`);
+  const installErrors = ((await send('Page.getInstallabilityErrors')).installabilityErrors || []).map((e) => e.errorId);
+  expect(!installErrors.length, `PWA: Chrome kurulabilir bulmadı (${installErrors.join(', ')})`);
+  const swState = await evaluate(`(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    await new Promise((r) => setTimeout(r, 1000)); // ilk yüklemedeki dosyaların önbelleğe yazılması
+    let cached = 0;
+    for (const k of await caches.keys()) cached += (await (await caches.open(k)).keys()).length;
+    return { active: !!reg.active, cached };
+  })()`);
+  expect(swState.active && swState.cached >= games.length + 8, `PWA: service worker/önbellek eksik ${JSON.stringify(swState)}`);
+  if (!liveUrl) {
+    server.closeAllConnections?.();
+    server.close();
+    serverClosed = true;
+    await send('Page.navigate', { url: `${BASE}#tetris` });
+    await sleep(2500);
+    const offline = await evaluate(`({ game: window.arcadeHub?.engine?.game?.meta.id ?? null,
+      controlled: !!navigator.serviceWorker.controller })`);
+    expect(offline.game === 'tetris', `PWA: sunucu kapalıyken site açılmadı ${JSON.stringify(offline)}`);
+    console.log(`  PWA         manifest ✓ · kurulabilir ✓ · önbellekte ${swState.cached} dosya · sunucu kapalıyken açıldı: ${offline.game === 'tetris' ? '✓' : '✗'}`);
+  }
 
   console.log(`\n${games.length} oyun hash/menü/hızlı geçiş/mobil/dokunmatik/dil/ayar/taşma kontrolünden geçirildi.`);
 } catch (err) {

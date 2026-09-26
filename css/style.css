@@ -44,6 +44,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(ellipse at 50% -20%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 60%),
     radial-gradient(ellipse at 100% 110%, color-mix(in srgb, var(--accent-2) 9%, transparent), transparent 55%),
@@ -82,7 +83,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 45%, color-mix(in srgb, var(--accent-2) 6%, transparent));
   box-shadow: 0 1px 18px -8px var(--accent);
@@ -124,6 +125,11 @@ select {
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s var(--ease-out), filter 0.15s;
+}
+
+/* [hidden] öznitelik düzeyindedir; .tool-btn display kuralı onu ezmesin (ör. iPhone'da tam ekran düğmesi). */
+.tool-btn[hidden] {
+  display: none;
 }
 
 .tool-btn .ico {
@@ -242,6 +248,109 @@ select {
   box-shadow: none;
 }
 
+/* ---------- Mobil oyun çubuğu ve oyun seçici ---------- */
+
+.game-bar {
+  display: none;
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-content: start;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.pick {
+  --pa: var(--cyan);
+  --pb: var(--pink);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 88px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--pa) 38%, var(--line));
+  border-radius: 12px;
+  background: linear-gradient(145deg,
+    color-mix(in srgb, var(--pa) 16%, var(--bg-2)),
+    color-mix(in srgb, var(--pb) 7%, var(--bg-2)));
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s var(--ease-out);
+}
+
+.pick:hover,
+.pick:focus-visible {
+  border-color: var(--pa);
+  outline: none;
+}
+
+.pick:active {
+  transform: scale(0.97);
+}
+
+.pick[aria-current="page"] {
+  border-color: var(--pa);
+  box-shadow: 0 0 0 1px var(--pa), 0 0 16px color-mix(in srgb, var(--pa) 45%, transparent);
+}
+
+.pick-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.pick-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--pa);
+}
+
+.pick-best {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+/* ---------- Mobil oyun modu ve ipuçları ---------- */
+
+.play-bar,
+.rotate-hint {
+  display: none;
+}
+
+.play-bar {
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.play-bar-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.play-bar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.rotate-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+}
+
 /* ---------- Sahne ---------- */
 
 .stage {
@@ -311,18 +420,19 @@ select {
 
 /*
  * Engine, canvas'ın mantıksal boyutunu --cw / --ch olarak yazar.
- * Genişlik: mantıksal boyut, kapsayıcı ve 75vh yüksekliğe sığacak şekilde en küçüğü;
+ * Genişlik: mantıksal boyut, kapsayıcı ve --avail-h yüksekliğe sığacak şekilde en küçüğü;
  * yükseklik aspect-ratio ile türetilir → oran her zaman korunur.
+ * --avail-h'yi app.js ölçer (görünür yükseklik − canvas'ın üst konumu); JS'ten önce 75vh.
  */
 #game-canvas {
   --cw: 600;
   --ch: 600;
   display: block;
-  width: min(calc(var(--cw) * 1px), 100%, calc(75vh * var(--cw) / var(--ch)));
+  width: min(calc(var(--cw) * 1px), 100%, calc(var(--avail-h, 75vh) * var(--cw) / var(--ch)));
   height: auto;
   aspect-ratio: var(--cw) / var(--ch);
   max-width: 100%;
-  max-height: 75vh;
+  max-height: var(--avail-h, 75vh);
   background: var(--bg);
   border-radius: 6px;
   box-shadow:
@@ -546,7 +656,7 @@ select {
 }
 
 .footer {
-  padding: 12px 16px 16px;
+  padding: 12px 16px max(16px, env(safe-area-inset-bottom));
   text-align: center;
   font-size: 11px;
   color: var(--dim);
@@ -554,9 +664,33 @@ select {
 
 /* ---------- Mobil ---------- */
 
-@media (max-width: 640px) {
+/* Dokunmatik ekranda her düğme en az 44 px (Apple HIG / Material 48 dp önerisine yakın). */
+@media (pointer: coarse) {
+  .tool-btn,
+  .menu-btn,
+  .opt {
+    min-height: 44px;
+  }
+
+  .tool-btn {
+    min-width: 44px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px), (max-height: 500px) and (pointer: coarse) {
   .topbar {
-    padding: 10px 12px;
+    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  }
+
+  /* Mobil GPU'da arkada çizilmeye devam eden canvas'ın her karede bulanıklaştırılması pahalı. */
+  .settings-backdrop {
+    backdrop-filter: none;
+    background: rgba(4, 4, 10, 0.72);
+  }
+
+  .settings-foot {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
 
   .logo {
@@ -592,27 +726,124 @@ select {
     display: inline;
   }
 
-  /* Menü tek satırda yatay kaydırılır. */
+  /* Mobilde yatay kayan menü yerine tek bir "oyun çubuğu" gösterilir (gizli kalan 9 oyun fark
+     edilmiyordu); başlığı da o taşır. Tüm oyunlar oyun seçicide. */
   .menu {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding: 10px 12px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .menu::-webkit-scrollbar {
     display: none;
   }
 
+  .game-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: calc(100% - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right)));
+    min-height: 48px;
+    margin: 8px auto 0;
+    padding: 6px 14px;
+    border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
+    border-radius: 12px;
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 16%, var(--bg-2)),
+      color-mix(in srgb, var(--accent-2) 9%, var(--bg-2)));
+    box-shadow: 0 0 14px -6px var(--accent);
+    color: var(--text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .game-bar:active {
+    transform: scale(0.99);
+  }
+
+  .game-bar-icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .game-bar-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+  }
+
+  .game-bar-hint {
+    flex: none;
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  /* Başlık oyun çubuğunda görünür; h1 ekran okuyucular için yerinde kalır. */
+  .game-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Oyun modu: oynarken yalnızca ince şerit + canvas (üst çubuk, oyun çubuğu ve metinler gizli). */
+  .play-mode .topbar,
+  .play-mode .game-bar,
+  .play-mode .game-description,
+  .play-mode .game-controls,
+  .play-mode .footer,
+  .play-mode .rotate-hint {
+    display: none;
+  }
+
+  .play-mode .play-bar {
+    display: flex;
+  }
+
+  /* Dokunma yüzeyi etkinken sahnede sayfa kaydırma/yakınlaştırma olmasın (swipe oyuna gitsin). */
+  .touch-surface .stage {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Dar dikey ekranda uzun oyunları genişlik sınırlar: kenar boşluğu da küçülür. */
+  .play-mode .stage {
+    padding: max(8px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left));
+  }
+
+  /* Yatay oyun (Pong, Life…) dikey ekranda küçük kalır: yan çevirme ipucu. */
+  html[data-wide] .rotate-hint {
+    display: block;
+  }
+
+  .picker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+  }
+
+  .pick {
+    min-height: 84px;
+    padding: 10px;
+  }
+
   .stage {
-    padding: 10px 12px 6px;
+    padding: 8px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
   }
 
   .game-title {
     font-size: 15px;
     margin-bottom: 8px;
+  }
+}
+
+@media (orientation: landscape) {
+  html[data-wide] .rotate-hint {
+    display: none;
   }
 }
 

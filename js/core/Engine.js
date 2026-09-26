@@ -2,7 +2,9 @@
  * Engine — oyun döngüsü, canvas yönetimi (HiDPI), duraklatma ve oyun yükleme.
  *
  * Döngü sırası: update(dt) → temizle → draw() → drawOverlay() → [duraklatma ekranı] → [geçiş perdesi] → input.endFrame()
- * Oyunlar her zaman mantıksal pikselle çizer; devicePixelRatio ölçeklemesi burada yapılır.
+ * Oyunlar her zaman mantıksal pikselle çizer; ölçekleme burada yapılır. Canvas'ın iç çözünürlüğü
+ * mantıksal boyuttan değil, ekranda GÖSTERİLDİĞİ boyuttan hesaplanır (CSS genişliği × dpr, dpr ≤ 2):
+ * telefonda 600 px'lik bir oyun ~370 CSS px'e sığdırıldığında 1800 px yerine ~740 px çizilir.
  * Oyun değişince canvas üzerinde oyunun tema rengiyle kısa bir "perde" geçişi oynatılır.
  */
 import { Input } from './Input.js';
@@ -12,13 +14,27 @@ import { NEON, FONT, easeOutCubic, clamp } from './BaseGame.js';
 import { t } from './I18n.js';
 
 const MAX_DT = 0.1;
+/**
+ * Kare hızı politikası (pil/ısınma için; oyun mantığı dt ile çalıştığından hız değişmez):
+ * - Dokunmatik cihazda ekran 100 Hz'in üstündeyse (120 Hz telefonlar) 60 FPS ile sınırlanır.
+ * - Duraklatılmışken PAUSED_FPS, ayar paneli açıkken ve "sakin" ekranda CALM_FPS.
+ * - Sakin: son girdiden ACTIVE_MS geçmiş, durum 1 sn'den eski ve oyun needsFullRate() demiyor.
+ * - Yeni bir girdi gelirse kare beklenmeden hemen işlenir (gecikme yok).
+ */
+const CAP_FPS = 60;
+const CALM_FPS = 30;
+const PAUSED_FPS = 10;
+const ACTIVE_MS = 2500;
 const TRANSITION_TIME = 0.5;
 const SHUTTERS = 7;
 
 const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+/** Çizim için kullanılan en yüksek piksel yoğunluğu. 3× ekranlarda 2× ile fark gözle seçilmez, piksel sayısı 2,25 kat azalır. */
+const MAX_DPR = 2;
+
 function currentDpr() {
-  return Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+  return Math.min(MAX_DPR, Math.max(1, window.devicePixelRatio || 1));
 }
 
 export class Engine {
@@ -39,20 +55,33 @@ export class Engine {
     this.width = canvas.width;
     this.height = canvas.height;
     this.dpr = 1;
+    /** Mantıksal pikselden canvas pikseline ölçek (CSS genişliği × dpr / mantıksal genişlik). */
+    this.scale = 1;
     this.game = null;
     this.paused = false;
     this.rafId = 0;
     this.lastTime = 0;
     this._errorLogged = false;
+    this._lastFrame = 0;
+    this._rafPrev = 0;
+    this._rafAvg = 16.7; // ölçülen rAF aralığı (ms), ekran yenileme hızını anlamak için
+    this.limitHighRefresh = !!window.matchMedia?.('(pointer: coarse)').matches;
 
     this._loop = this._loop.bind(this);
     this._onVisibility = () => {
       if (document.hidden) this.pause();
     };
     this._unlockAudio = () => this.sound.unlock();
+    // Canvas'ın ekrandaki boyutu değişince (döndürme, pencere, düzen) iç çözünürlük yeniden hesaplanır.
+    if (typeof ResizeObserver !== 'undefined') {
+      this._resizeObserver = new ResizeObserver(() => this._fitBacking(true));
+      this._resizeObserver.observe(canvas);
+    }
     document.addEventListener('visibilitychange', this._onVisibility);
-    window.addEventListener('pointerdown', this._unlockAudio, true);
-    window.addEventListener('keydown', this._unlockAudio, true);
+    // pointerup/touchend: dokunmatikte ses izni parmak kalkınca oluşur (yoksa ilk dokunuş sessiz kalırdı).
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown']) {
+      window.addEventListener(type, this._unlockAudio, true);
+    }
   }
 
   /** Önceki oyunu yok eder, canvas'ı yeni oyunun boyutuna getirir ve başlatır. */
@@ -77,8 +106,10 @@ export class Engine {
     const game = new GameClass(this);
     this.game = game;
     game.init();
+    this._state = game.state;
 
     this.lastTime = performance.now();
+    this.input.lastActivity = this.lastTime; // yeni oyun: ilk saniyeler tam hız
     if (!this.rafId) this.rafId = requestAnimationFrame(this._loop);
     this._emit();
     return game;
@@ -88,13 +119,33 @@ export class Engine {
   resizeCanvas(w, h) {
     this.width = w;
     this.height = h;
-    this.dpr = currentDpr();
-    this.canvas.width = Math.round(w * this.dpr);
-    this.canvas.height = Math.round(h * this.dpr);
     this.canvas.style.setProperty('--cw', String(w));
     this.canvas.style.setProperty('--ch', String(h));
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.input.setSize(w, h);
+    this._fitBacking(false);
+  }
+
+  /**
+   * İç çözünürlüğü canvas'ın ekrandaki boyutuna uydurur. Boyut değişmediyse dokunmaz
+   * (canvas.width atamak içeriği siler). `redraw`: ResizeObserver'dan gelindiğinde tuval
+   * boyama öncesi silinmiş olur; boş kare görünmesin diye hemen yeniden çizilir.
+   */
+  _fitBacking(redraw) {
+    const w = this.width;
+    const h = this.height;
+    const dpr = currentDpr();
+    // clientWidth, CSS'teki min(...) sonucudur; ekran dışı/gizliyse mantıksal boyuta düşülür.
+    const cssW = this.canvas.clientWidth || w;
+    const scale = Math.min(cssW, w) * dpr / w;
+    const bw = Math.max(1, Math.round(w * scale));
+    const bh = Math.max(1, Math.round(h * scale));
+    this.dpr = dpr;
+    if (bw === this.canvas.width && bh === this.canvas.height && scale === this.scale) return;
+    this.scale = scale;
+    this.canvas.width = bw;
+    this.canvas.height = bh;
+    this.ctx.setTransform(bw / w, 0, 0, bh / h, 0, 0);
+    if (redraw && this.game) this._render(0);
   }
 
   /** Oyunu dondurur/çözer. Çözülürken oynanan bir oyun varsa duraklatma ekranına geçer. */
@@ -129,8 +180,26 @@ export class Engine {
     if (this.onChange) this.onChange(this);
   }
 
+  /** Bu kare için iki kare arası en kısa süre (ms); 0 = her rAF karesi. */
+  _minFrameGap(now) {
+    const cap = this.limitHighRefresh && this._rafAvg < 10 ? 1000 / CAP_FPS : 0;
+    const game = this.game;
+    if (!game || this.transition) return cap;
+    if (this.paused) return 1000 / PAUSED_FPS;
+    if (this.suspended) return 1000 / CALM_FPS;
+    const calm = now - this.input.lastActivity > ACTIVE_MS && game.stateTime > 1 && !game.needsFullRate();
+    return calm ? Math.max(cap, 1000 / CALM_FPS) : cap;
+  }
+
   _loop(now) {
     this.rafId = requestAnimationFrame(this._loop);
+    if (this._rafPrev) this._rafAvg += (Math.min(100, now - this._rafPrev) - this._rafAvg) * 0.05;
+    this._rafPrev = now;
+    // Kare atlama: girdi yoksa ve bir sonraki kareye henüz vakit gelmediyse hiçbir şey yapma.
+    // (Girdi kaybolmaz: Input durumu endFrame'e kadar birikir.)
+    const gap = this._minFrameGap(now);
+    if (gap && now - this._lastFrame < gap - 1.5 && this.input.lastActivity <= this._lastFrame) return;
+    this._lastFrame = now;
     const dt = Math.min(MAX_DT, Math.max(0, (now - this.lastTime) / 1000));
     this.lastTime = now;
 
@@ -141,7 +210,7 @@ export class Engine {
       return;
     }
     // Tarayıcı yakınlaştırma / ekran değişimi dpr'ı değiştirebilir.
-    if (currentDpr() !== this.dpr) this.resizeCanvas(this.width, this.height);
+    if (currentDpr() !== this.dpr) this._fitBacking(false);
 
     try {
       if (this.suspended) {
@@ -157,25 +226,47 @@ export class Engine {
       if (!this.paused && !this.suspended) game.update(dt);
       // Oyun bittiyse ya da artık duraklatılamıyorsa duraklatmayı kaldır.
       if (this.paused && !game.canPause()) this.resume();
-
-      const ctx = this.ctx;
-      ctx.save();
-      ctx.fillStyle = NEON.bg;
-      ctx.fillRect(0, 0, this.width, this.height);
-      game.draw();
-      ctx.restore();
-      ctx.save();
-      game.drawOverlay();
-      ctx.restore();
-      if (this.paused) this._drawPause();
-      if (this.transition) this._drawTransition(dt);
-    } catch (err) {
-      if (!this._errorLogged) {
-        this._errorLogged = true;
-        console.error(`[${game.constructor.meta?.id}]`, err);
+      // Oyun durumu değiştiyse (hazır → oynanıyor → bitti) arayüze haber ver (ör. mobil oyun modu).
+      if (game.state !== this._state) {
+        this._state = game.state;
+        this._emit();
       }
+
+      this._draw(dt);
+    } catch (err) {
+      this._logError(err);
     }
     input.endFrame();
+  }
+
+  /** Yalnızca çizim (güncelleme yok); ör. canvas yeniden boyutlanınca aynı kareyi tekrar çizer. */
+  _render(dt) {
+    try {
+      this._draw(dt);
+    } catch (err) {
+      this._logError(err);
+    }
+  }
+
+  _draw(dt) {
+    const game = this.game;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = NEON.bg;
+    ctx.fillRect(0, 0, this.width, this.height);
+    game.draw();
+    ctx.restore();
+    ctx.save();
+    game.drawOverlay();
+    ctx.restore();
+    if (this.paused) this._drawPause();
+    if (this.transition) this._drawTransition(dt);
+  }
+
+  _logError(err) {
+    if (this._errorLogged) return;
+    this._errorLogged = true;
+    console.error(`[${this.game?.constructor.meta?.id}]`, err);
   }
 
   _drawPause() {

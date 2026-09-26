@@ -11,8 +11,15 @@ export const en = {
   'ui.language': 'Language',
   'ui.controls': 'Controls',
   'ui.gamesNav': 'Games',
+  'ui.allGames': 'All games',
+  'ui.chooseGame': 'Choose a game',
+  'ui.fullscreen': 'Full screen',
+  'ui.exitFullscreen': 'Exit full screen',
+  'ui.rotateHint': 'Turn your phone sideways for a bigger board',
+  'ui.bestShort': 'Best {n}',
   'ui.canvas': 'Game area',
   'ui.home': 'Arcade Hub home game',
+  'ui.footerTouch': '⏸: pause · All graphics are drawn in code on a canvas · High scores and settings are stored in this browser',
   'ui.footer': 'P / Esc: pause · All graphics are drawn in code on a canvas · High scores and settings are stored in this browser',
   'ui.metaDescription': 'A serverless, dependency-free HTML5 retro arcade collection.',
   'ui.settingsTitle': '{game} · Settings',
@@ -79,6 +86,7 @@ export const en = {
 
   /* ---------- Snake ---------- */
   'snake.title': 'Snake',
+  'snake.touchControls': 'Swipe to steer',
   'snake.controls': 'Arrow keys / WASD to steer · Swipe on mobile',
   'snake.description': 'Eat the food, grow longer and avoid the walls and your own tail. The snake speeds up a little with every bite. Map size, colour and apple count are in ⚙ Settings.',
   'snake.length': 'LENGTH {n}',
@@ -90,6 +98,7 @@ export const en = {
 
   /* ---------- 2048 ---------- */
   '2048.title': '2048',
+  '2048.touchControls': 'Swipe to slide the tiles',
   '2048.controls': 'Arrow keys / WASD to slide · Swipe on mobile',
   '2048.description': 'Merge equal numbers to reach the target tile (2048 on 4×4). Every move adds a new 2 or 4. Grid size and Roman numerals are in ⚙ Settings.',
   '2048.arabic': 'Classic (2, 4, 8…)',
@@ -103,6 +112,7 @@ export const en = {
 
   /* ---------- Minesweeper ---------- */
   'minesweeper.title': 'Minesweeper',
+  'minesweeper.touchControls': 'Tap: reveal · Long press: flag · Tap an open number: reveal around it · Buttons on top: difficulty',
   'minesweeper.controls': 'Left click / tap: reveal · Right click / long press: flag · Click an open number: reveal around it · 1/2/3: difficulty',
   'minesweeper.description': 'Reveal every safe cell without hitting a mine. The first click is always safe; your best time is saved.',
   'minesweeper.time': 'TIME',
@@ -113,6 +123,7 @@ export const en = {
 
   /* ---------- Tetris ---------- */
   'tetris.title': 'Tetris',
+  'tetris.touchControls': 'Tap: rotate · Drag sideways: move · Swipe down: hard drop · Swipe up: hold',
   'tetris.controls': '←/→ move · ↑ / X rotate · Z rotate back · ↓ soft drop · Space hard drop · C hold · Mobile: tap rotate, drag move, swipe down drop, swipe up hold',
   'tetris.description': 'Complete lines to clear them. 1/2/3/4 lines: 100/300/500/800 × level. Level and speed go up every 10 lines.',
   'tetris.lines': 'LINES',
@@ -121,12 +132,14 @@ export const en = {
 
   /* ---------- Pong ---------- */
   'pong.title': 'Pong',
+  'pong.touchControls': 'The paddle follows your finger · In 2-player mode the right half of the screen is player 2 · Buttons on the ready screen: players',
   'pong.controls': 'Player 1: W/S · Player 2: ↑/↓ (in 1-player mode ↑/↓ also move player 1) · 1/2: mode · Mobile: the paddle follows your finger',
   'pong.description': 'Classic Pong. Play the computer or a friend on the same keyboard; first to 7 wins.',
   'pong.ready': 'First to {n} wins',
 
   /* ---------- Breakout ---------- */
   'breakout.title': 'Breakout',
+  'breakout.touchControls': 'Drag: move the paddle · Tap: launch the ball · Catch falling capsules with the paddle',
   'breakout.controls': 'Mouse / touch or ←/→ (A/D) to move · Space / click / tap: launch · Catch falling capsules with the paddle',
   'breakout.description': 'Keep the ball in play and smash every brick. Broken bricks drop power-ups: ×3 multi-ball, ↔ wide paddle, ⇡ laser, S slow-mo, F fireball, ♥ extra life.',
   'breakout.launch': 'Space / tap to launch',
@@ -143,6 +156,7 @@ export const en = {
 
   /* ---------- Flappy ---------- */
   'flappy.title': 'Flappy Bird',
+  'flappy.touchControls': 'Tap: flap',
   'flappy.controls': 'Space / ↑ / click / tap: flap',
   'flappy.description': 'Fly through the gaps between the pipes. Each pipe is +1 point; don\'t hit the ground or a pipe. Bird colour and look are in ⚙ Settings.',
   'flappy.skin.classic': 'Classic',
@@ -154,6 +168,7 @@ export const en = {
 
   /* ---------- Tic-Tac-Toe ---------- */
   'tictactoe.title': 'Tic-Tac-Toe',
+  'tictactoe.touchControls': 'Tap a square to place a mark · Buttons on the ready/end screen: players and difficulty',
   'tictactoe.controls': 'Click / tap or arrows + Enter to place a mark · 1/2: players · K/Z: easy/hard',
   'tictactoe.description': 'Get three in a row. In 1-player mode you are X; the computer on hard can\'t be beaten.',
   'tictactoe.ready': 'Choose mode and difficulty',
@@ -162,12 +177,14 @@ export const en = {
 
   /* ---------- Connect Four ---------- */
   'connect4.title': 'Connect Four',
+  'connect4.touchControls': 'Tap a column to drop a disc · Buttons on the ready/end screen: players',
   'connect4.controls': 'Mouse / touch to pick a column and drop · ←/→ + Enter / Space · 1/2: players',
   'connect4.description': 'Line up four discs horizontally, vertically or diagonally. In 1-player mode you face an alpha-beta minimax computer.',
   'connect4.ready': 'Connect four in a row',
 
   /* ---------- Lights Out ---------- */
   'lightsout.title': 'Lights Out',
+  'lightsout.touchControls': 'Tap: toggle a light and its neighbours · Buttons below: Reset / Hint',
   'lightsout.controls': 'Click / tap or arrows + Enter: toggle a light and its neighbours · R: reset level · H: hint',
   'lightsout.description': 'Switch off every light. Each click toggles a cell and its four neighbours; every puzzle is solvable. 10 levels.',
   'lightsout.reset': '↺ RESET',
@@ -181,6 +198,7 @@ export const en = {
 
   /* ---------- Memory ---------- */
   'memory.title': 'Memory Match',
+  'memory.touchControls': 'Tap a card to flip it',
   'memory.controls': 'Click / tap or arrows + Enter to flip a card',
   'memory.description': 'Flip cards to find pairs with the same shape and colour. Fewer moves, more points. Card count (difficulty) is in ⚙ Settings.',
   'memory.grid.easy': 'Easy',
@@ -195,6 +213,7 @@ export const en = {
 
   /* ---------- Life ---------- */
   'life.title': 'Conway\'s Game of Life',
+  'life.touchControls': 'Drag from an empty cell: draw · Drag from a live cell: erase · Buttons below: play, step, random, clear, pattern, speed',
   'life.controls': 'Space: play/pause · N: single step · C: clear · R: random · + / −: speed · 1-3: glider / pulsar / glider gun · Drag: draw (right click: erase) · Mobile: buttons in the bottom bar',
   'life.description': 'A cellular automaton: a cell with 2-3 neighbours survives, an empty cell with exactly 3 is born. The edges wrap around (toroidal).',
   'life.running': '▶ RUNNING',

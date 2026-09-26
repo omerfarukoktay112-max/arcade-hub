@@ -9,6 +9,12 @@ const PREVENT_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
 const LONG_PRESS_MS = 400;
 const SWIPE_PX = 30; // CSS pikseli
 const TAP_SLOP_PX = 12; // dokunmanın hâlâ "tap" sayıldığı en fazla kayma
+/**
+ * Swipe yönü ancak bir eksen diğerinin bu kadar katıysa belirlenir; çapraz (belirsiz) harekette
+ * hareket SWIPE_PX × 2'yi geçene kadar beklenir. Aksi halde Tetris'te yana sürüklerken parmağın
+ * ilk anda biraz aşağı kayması istemeden sert düşürme yapıyordu.
+ */
+const SWIPE_RATIO = 1.4;
 
 function isEditable(el) {
   return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
@@ -47,6 +53,16 @@ export class Input {
 
     this._gesture = null;
     this._longPressTimer = 0;
+    /** Son klavye/pointer olayının zamanı (performance.now). Engine sakin ekranda kare hızını buna göre düşürür. */
+    this.lastActivity = 0;
+    /**
+     * Dokunma yüzeyi: canvas dışındaki bir alan (mobil oyun modunda sahne). Etkinken orada başlayan
+     * dokunuşlar da oyuna gider (başparmak tahtayı örtmeden swipe/sürükleme yapabilsin); koordinatlar
+     * canvas sınırına sıkıştırılır. app.js açar/kapatır (surfaceEnabled).
+     */
+    this.surface = null;
+    this.surfaceEnabled = false;
+    this._onSurfaceDown = this._onSurfaceDown.bind(this);
 
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
@@ -119,7 +135,15 @@ export class Input {
     this.pointer.button = 0;
   }
 
+  /** Canvas dışındaki dokunma yüzeyini bağlar (bkz. surfaceEnabled). */
+  setSurface(el) {
+    this.surface?.removeEventListener('pointerdown', this._onSurfaceDown);
+    this.surface = el;
+    el?.addEventListener('pointerdown', this._onSurfaceDown);
+  }
+
   destroy() {
+    this.setSurface(null);
     this.reset();
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
@@ -137,6 +161,7 @@ export class Input {
 
   _onKeyDown(e) {
     if (isEditable(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+    this.lastActivity = performance.now();
     if (PREVENT_KEYS.has(e.code)) e.preventDefault();
     if (!e.repeat && !this.keysDown.has(e.code)) this.keysPressed.add(e.code);
     if (!e.repeat) this.keysTyped.add(e.key);
@@ -144,6 +169,7 @@ export class Input {
   }
 
   _onKeyUp(e) {
+    this.lastActivity = performance.now();
     if (PREVENT_KEYS.has(e.code) && !isEditable(e.target)) e.preventDefault();
     this.keysDown.delete(e.code);
   }
@@ -158,16 +184,23 @@ export class Input {
 
   /* ---------- Pointer ---------- */
 
-  _toLogical(e) {
+  _toLogical(e, clamp = false) {
     const r = this.canvas.getBoundingClientRect();
     if (!r.width || !r.height) return { x: 0, y: 0 };
-    return {
-      x: ((e.clientX - r.left) * this.width) / r.width,
-      y: ((e.clientY - r.top) * this.height) / r.height,
-    };
+    const x = ((e.clientX - r.left) * this.width) / r.width;
+    const y = ((e.clientY - r.top) * this.height) / r.height;
+    if (!clamp) return { x, y };
+    return { x: Math.min(this.width, Math.max(0, x)), y: Math.min(this.height, Math.max(0, y)) };
   }
 
-  _onPointerDown(e) {
+  _onSurfaceDown(e) {
+    if (!this.surfaceEnabled || e.pointerType === 'mouse' || e.target === this.canvas) return;
+    if (e.target.closest?.('button, a, select, input, label')) return; // şerit düğmeleri çalışsın
+    this._onPointerDown(e, true);
+  }
+
+  _onPointerDown(e, fromSurface = false) {
+    this.lastActivity = performance.now();
     if (this._gesture) return; // ikinci parmakları yok say
     e.preventDefault();
     try {
@@ -176,7 +209,7 @@ export class Input {
       /* bazı tarayıcılar desteklemez */
     }
     const p = this.pointer;
-    const pos = this._toLogical(e);
+    const pos = this._toLogical(e, fromSurface);
     p.x = p.startX = pos.x;
     p.y = p.startY = pos.y;
     p.isDown = true;
@@ -185,7 +218,7 @@ export class Input {
     p.button = e.button === 2 ? 2 : 0;
 
     const gesture = {
-      id: e.pointerId, sx: e.clientX, sy: e.clientY,
+      id: e.pointerId, sx: e.clientX, sy: e.clientY, fromSurface,
       type: p.type, moved: false, swiped: false, longPressed: false,
     };
     this._gesture = gesture;
@@ -205,13 +238,14 @@ export class Input {
   }
 
   _onPointerMove(e) {
+    this.lastActivity = performance.now();
     const p = this.pointer;
-    const pos = this._toLogical(e);
+    const g = this._gesture;
+    const pos = this._toLogical(e, !!g?.fromSurface);
     p.x = pos.x;
     p.y = pos.y;
     if (e.pointerType === 'mouse') p.hover = true;
 
-    const g = this._gesture;
     if (!g || g.id !== e.pointerId) return;
     const dx = e.clientX - g.sx;
     const dy = e.clientY - g.sy;
@@ -221,16 +255,21 @@ export class Input {
       this._cancelLongPress();
     }
     if (!g.swiped && !g.longPressed && dist >= SWIPE_PX) {
-      g.swiped = true;
-      this.swipe = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      if (Math.max(ax, ay) >= Math.min(ax, ay) * SWIPE_RATIO || dist >= SWIPE_PX * 2) {
+        g.swiped = true;
+        this.swipe = ax > ay ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+      }
     }
   }
 
   _onPointerUp(e) {
+    this.lastActivity = performance.now();
     const g = this._gesture;
     if (!g || g.id !== e.pointerId) return;
     const p = this.pointer;
-    const pos = this._toLogical(e);
+    const pos = this._toLogical(e, g.fromSurface);
     p.x = pos.x;
     p.y = pos.y;
     p.isDown = false;
